@@ -115,16 +115,49 @@ async function readZipText(zip: JSZip, path: string): Promise<string | null> {
 }
 
 function getMetadataText(opfDoc: Document, tagName: string): string | null {
-  // Try with dc: namespace prefix
-  let el = opfDoc.querySelector(`metadata > *[local-name()="${tagName}"]`);
+  // Method 1: Use getElementsByTagNameNS with wildcard namespace to match localName regardless of prefix
+  let el = opfDoc.getElementsByTagNameNS('*', tagName)[0] ?? null;
+  
   if (!el) {
-    // Direct querySelector with various namespace approaches
+    // Method 2: Direct getElementsByTagName with 'dc:' prefix
     el = opfDoc.getElementsByTagName(`dc:${tagName}`)[0] ?? null;
   }
   if (!el) {
+    // Method 3: Direct getElementsByTagName without prefix
     el = opfDoc.getElementsByTagName(tagName)[0] ?? null;
   }
-  return el?.textContent?.trim() || null;
+  
+  // Ensure the element is actually inside <metadata> to avoid finding spine items named 'title' if any
+  if (el) {
+    let parent = el.parentNode;
+    let inMetadata = false;
+    while (parent) {
+      if (parent.nodeName.toLowerCase() === 'metadata') {
+        inMetadata = true;
+        break;
+      }
+      parent = parent.parentNode;
+    }
+    if (inMetadata) {
+      return el.textContent?.trim() || null;
+    }
+  }
+
+  // Fallback: iterate over metadata children explicitly
+  const metadataEl = opfDoc.getElementsByTagName('metadata')[0] || opfDoc.getElementsByTagNameNS('*', 'metadata')[0];
+  if (metadataEl) {
+    for (let i = 0; i < metadataEl.childNodes.length; i++) {
+      const child = metadataEl.childNodes[i];
+      if (child.nodeType === 1 /* Element */) {
+        const elChild = child as Element;
+        if (elChild.localName === tagName) {
+          return elChild.textContent?.trim() || null;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 interface ManifestItem {
