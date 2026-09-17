@@ -1,0 +1,26 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1, 4px) var(--space-3, 12px);
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-sm, 14px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  transition: all var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.clickable {
+  cursor: pointer;
+}
+.active {
+  background-color: var(--color-accent-soft, #e6f2ff);
+  color: var(--color-accent, #007bff);
+}
+.active.clickable:hover {
+  background-color: var(--color-accent, #007bff);
+  color: var(--color-white, #fff);
+}
+.deleted {
+  background-color: var(--color-surface-sunken, #f5f5f5);
+  color: var(--color-text-tertiary, #999);
+  text-decoration: line-through;
+  cursor: not-allowed;
+}

@@ -1,0 +1,36 @@
+.scrollContainer {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: var(--reader-max-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: calc(var(--reader-topbar-height) + var(--space-6)) var(--space-5) var(--space-8);
+  overflow-anchor: auto;
+}
+
+.chapterPlaceholder {
+  /* Invisible placeholder that preserves scroll height for unmounted chapters */
+}
+
+.chapterLoading {
+  padding: var(--space-6) 0;
+}
+
+.chapterLoadingTitle {
+  margin-bottom: var(--space-6);
+}
+
+.chapterLoadingSentence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+@media (max-width: 767px) {
+  .scrollContainer {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}

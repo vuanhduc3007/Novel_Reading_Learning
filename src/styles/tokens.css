@@ -1,0 +1,128 @@
+/* ============================================
+   Chinese Reader — Design Tokens
+   Based on Design Spec v1.1, Sections 8–10
+   ============================================ */
+
+:root,
+[data-theme='light'] {
+  /* === Spacing === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* === Radius === */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  /* === Shadow === */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.16);
+
+  /* === Border === */
+  --border-width-thin: 1px;
+  --border-width-thick: 2px;
+
+  /* === Animation === */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* === Breakpoints (as reference, used in media queries) === */
+  /* --bp-mobile: max-width 767px */
+  /* --bp-tablet: 768px – 1023px */
+  /* --bp-laptop: 1024px – 1279px */
+  /* --bp-desktop: min-width 1280px */
+
+  /* === Typography scale (UI) === */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+
+  /* === Font stacks === */
+  --font-chinese-serif: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  --font-chinese-sans: 'Noto Sans SC', sans-serif;
+  --font-vietnamese: 'Be Vietnam Pro', 'Inter', system-ui, sans-serif;
+  --font-ui: 'Inter', system-ui, sans-serif;
+
+  /* === Reading type scale (default = L) === */
+  --reading-cn-size: 21px;
+  --reading-cn-line-height: 1.9;
+  --reading-vi-size: 15px;
+  --reading-vi-line-height: 1.6;
+
+  /* === Colors — Light Mode === */
+  --color-bg: #FAF7F1;
+  --color-surface: #FFFFFF;
+  --color-surface-sunken: #F1ECE2;
+  --color-border: #E6E0D3;
+  --color-text-primary: #211D17;
+  --color-text-secondary: #6E6656;
+  --color-text-tertiary: #A69C89;
+  --color-accent: #2F6F5E;
+  --color-accent-hover: #26594B;
+  --color-accent-soft: #E4EFEA;
+  --color-success: #3F8F5F;
+  --color-warning: #B9822E;
+  --color-error: #C24B3F;
+
+  /* === Derived / semantic tokens === */
+  --color-word-underline: var(--color-text-tertiary);
+  --color-word-hover-bg: var(--color-accent-soft);
+  --color-jump-highlight: var(--color-accent-soft);
+  --color-focus-ring: rgba(47, 111, 94, 0.4);
+  --color-text-selection: var(--color-accent-soft);
+  --color-delete-btn: var(--color-error);
+  --color-ai-badge-border: var(--color-border);
+  --color-ai-badge-text: var(--color-text-tertiary);
+
+  /* === Utility colors === */
+  --color-white: #FFFFFF;
+  --color-overlay: rgba(0, 0, 0, 0.4);
+
+  /* === Layout === */
+  --nav-height: 64px;
+  --reader-topbar-height: 56px;
+  --reader-max-width: 680px;
+  --contents-width: 260px;
+  --contents-rail-width: 56px;
+  --dictionary-width: 380px;
+}
+
+[data-theme='dark'] {
+  --color-bg: #14171A;
+  --color-surface: #1C2024;
+  --color-surface-sunken: #23282D;
+  --color-border: #2C3237;
+  --color-text-primary: #ECE8DF;
+  --color-text-secondary: #A6A198;
+  --color-text-tertiary: #706C63;
+  --color-accent: #5FB393;
+  --color-accent-hover: #74C1A3;
+  --color-accent-soft: #1E332C;
+  --color-success: #5FB393;
+  --color-warning: #D9A24B;
+  --color-error: #E0685A;
+
+  --color-focus-ring: rgba(95, 179, 147, 0.4);
+
+  /* Dark mode shadows need border reinforcement */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+}

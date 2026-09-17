@@ -1,0 +1,72 @@
+.container {
+  padding: var(--space-4) 0;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.stepIcon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+}
+
+.stepCompleted {
+  background-color: var(--color-success);
+  color: white;
+}
+
+.stepCurrent {
+  color: var(--color-accent);
+}
+
+.stepPending {
+  color: var(--color-text-tertiary);
+}
+
+.stepLabel {
+  font-size: var(--text-sm);
+}
+
+.stepLabelActive {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.stepLabelDone {
+  color: var(--color-text-secondary);
+}
+
+.stepLabelPending {
+  color: var(--color-text-tertiary);
+}
+
+.detail {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-2);
+  min-height: 16px;
+  text-align: right;
+}
+
+.spinAnimation {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { 
+  from { transform: rotate(0deg); } 
+  to { transform: rotate(360deg); } 
+}

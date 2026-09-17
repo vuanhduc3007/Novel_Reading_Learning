@@ -1,0 +1,138 @@
+.card {
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.coverWrapper {
+  position: relative;
+}
+
+.cover {
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background-color: var(--color-surface-sunken);
+  object-fit: cover;
+  box-shadow: var(--shadow-sm);
+}
+
+.coverPlaceholder {
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-accent-soft);
+}
+
+.accentIcon {
+  color: var(--color-accent);
+  opacity: 0.8;
+}
+
+.title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.author {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-1);
+}
+
+.progress {
+  height: 4px;
+  margin-top: var(--space-2);
+}
+
+.statusBadge {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+.kebab {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  border-radius: var(--radius-full);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+  cursor: pointer;
+}
+
+.card:hover .kebab {
+  opacity: 1;
+}
+
+.kebabMenu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
+  z-index: 10;
+  min-width: 180px;
+  border: 1px solid var(--color-border);
+  padding: var(--space-1) 0;
+}
+
+.kebabItem {
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.kebabItem:hover {
+  background-color: var(--color-surface-sunken);
+}
+
+.destructive {
+  color: var(--color-error);
+}
+
+.dragOver {
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+}
+
+@media (max-width: 767px) {
+  .kebab {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,51 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  width: 100%;
+}
+.label {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary, #111);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 500;
+}
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.leftIcon {
+  position: absolute;
+  left: var(--space-3, 12px);
+  color: var(--color-text-secondary, #666);
+  display: flex;
+}
+.input {
+  width: 100%;
+  background-color: var(--color-surface-sunken, #f5f5f5);
+  border: 1px solid var(--color-border, #eaeaea);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  font-size: var(--text-base, 16px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-text-primary, #111);
+  transition: border-color var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.withLeftIcon {
+  padding-left: calc(var(--space-3, 12px) * 2 + 20px); /* Adjust based on icon size */
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent, #007bff);
+}
+.inputError {
+  border-color: var(--color-error, #dc3545);
+}
+.inputError:focus {
+  border-color: var(--color-error, #dc3545);
+}
+.errorText {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-error, #dc3545);
+}

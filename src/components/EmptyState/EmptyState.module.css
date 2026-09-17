@@ -1,0 +1,32 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-9, 48px) var(--space-4, 16px);
+  max-width: 400px;
+  margin: 0 auto;
+}
+.icon {
+  color: var(--color-text-tertiary, #999);
+  margin-bottom: var(--space-4, 16px);
+}
+.icon > svg {
+  width: 48px;
+  height: 48px;
+}
+.heading {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: var(--text-lg, 18px);
+  color: var(--color-text-primary, #111);
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+.description {
+  margin: 0 0 var(--space-6, 24px);
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-secondary, #666);
+}
+.action {
+  margin-top: var(--space-2, 8px);
+}

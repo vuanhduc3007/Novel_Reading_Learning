@@ -1,0 +1,29 @@
+.header {
+  text-align: center;
+  padding: var(--space-6) 0;
+  margin-bottom: var(--space-5);
+}
+
+.index {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2);
+}
+
+.title {
+  font-family: var(--font-chinese-serif);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}

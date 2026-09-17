@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: chinese-reader-backend
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRANSLATION_PROVIDER
+        value: google-free
+      - key: FRONTEND_URL
+        value: https://your-netlify-site.netlify.app
+      # Do not put TRANSLATION_API_KEY or DICTIONARY_API_KEY here.
+      # Configure secrets securely in the Render dashboard.
+

@@ -1,0 +1,71 @@
+.pair {
+  /* Gap between pairs handled by parent flex gap */
+}
+
+.chinese {
+  font-family: var(--font-chinese-serif);
+  font-size: var(--reading-cn-size, 21px);
+  line-height: var(--reading-cn-line-height, 1.9);
+  color: var(--color-text-primary);
+  margin: 0;
+  /* Prepare for future WordToken interactivity */
+  cursor: default;
+}
+
+.vietnamese {
+  font-family: var(--font-vietnamese);
+  font-size: var(--reading-vi-size, 15px);
+  line-height: var(--reading-vi-line-height, 1.6);
+  color: var(--color-text-secondary);
+  margin: var(--space-1) 0 0 0;
+}
+
+.translating {
+  font-family: var(--font-vietnamese);
+  font-size: var(--reading-vi-size, 15px);
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  display: block;
+  margin-top: var(--space-1);
+  min-height: calc(var(--reading-vi-size, 15px) * var(--reading-vi-line-height, 1.6));
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+.failed {
+  font-family: var(--font-vietnamese);
+  font-size: var(--reading-vi-size, 15px);
+  color: var(--color-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  cursor: pointer;
+}
+
+.failed:hover {
+  color: var(--color-accent);
+}
+
+.onDemandToggle {
+  border: none;
+  background: none;
+  font-family: var(--font-vietnamese);
+  font-size: var(--reading-vi-size, 15px);
+  color: var(--color-accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  padding: 0;
+}
+
+.onDemandToggle:hover {
+  text-decoration: underline;
+}

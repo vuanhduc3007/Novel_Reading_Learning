@@ -1,0 +1,25 @@
+.token {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color var(--duration-fast), color var(--duration-fast);
+  padding: 0 1px;
+  margin: 0 -1px;
+}
+
+.token:hover {
+  background-color: var(--color-word-hover-bg, var(--color-accent-soft));
+  color: var(--color-accent);
+}
+
+.token.active {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.known {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--color-accent-soft);
+  text-underline-offset: 4px;
+}
