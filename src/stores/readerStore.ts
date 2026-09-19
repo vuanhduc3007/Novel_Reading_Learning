@@ -10,6 +10,28 @@ const READING_SIZES: Record<ReadingSize, { cnSize: number; cnLh: number; viSize:
   XXL: { cnSize: 28, cnLh: 1.8, viSize: 19, viLh: 1.5 },
 };
 
+const READING_MODES: readonly ReadingMode[] = ['bilingual', 'chinese_only', 'on_demand'];
+const READING_SIZE_KEYS: readonly ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
+
+// A route change and React StrictMode can overlap IndexedDB reads. A monotonically
+// increasing session makes late results from an old reader instance harmless.
+let readerSession = 0;
+
+function readStoredReadingMode(): ReadingMode {
+  const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-mode');
+  return READING_MODES.includes(value as ReadingMode) ? value as ReadingMode : 'bilingual';
+}
+
+function readStoredReadingSize(): ReadingSize {
+  const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-size');
+  return READING_SIZE_KEYS.includes(value as ReadingSize) ? value as ReadingSize : 'L';
+}
+
+function readStoredLineHeight(): number {
+  const value = typeof window === 'undefined' ? null : Number(localStorage.getItem('reader-line-height'));
+  return value === 1 || value === 1.2 || value === 1.5 ? value : 1;
+}
+
 interface ReaderState {
   // Book context
   bookId: string | null;
@@ -88,14 +110,32 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   readingMode: 'bilingual',
   readingSize: 'L',
   readingSizeValues: READING_SIZES['L'],
-  lineHeightMultiplier: Number(localStorage.getItem('reader-line-height')) || 1.0,
+  lineHeightMultiplier: readStoredLineHeight(),
   jumpTargetChapterIndex: null,
   jumpTargetSentenceId: null,
 
   initializeReader: async (bookId) => {
-    set({ isLoading: true, loadError: null, bookId });
+    const session = ++readerSession;
+    set({
+      bookId,
+      bookTitle: '',
+      bookAuthor: '',
+      chapters: [],
+      totalSentences: 0,
+      currentChapterIndex: 0,
+      currentSentenceId: null,
+      readingProgress: 0,
+      chapterSentences: {},
+      loadingChapterIds: [],
+      chapterHeights: {},
+      jumpTargetChapterIndex: null,
+      jumpTargetSentenceId: null,
+      isLoading: true,
+      loadError: null,
+    });
     try {
       const book = await db.books.get(bookId);
+      if (session !== readerSession) return;
       if (!book) {
         set({ isLoading: false, loadError: 'Sách không tìm thấy' });
         return;
@@ -105,6 +145,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       const chapters = await db.chapters
         .where('bookId').equals(bookId)
         .sortBy('index');
+      if (session !== readerSession) return;
 
       if (chapters.length === 0) {
         set({ isLoading: false, loadError: 'Sách không có chương nào' });
@@ -115,21 +156,21 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       const totalSentences = await db.sentences
         .where('bookId').equals(bookId)
         .count();
+      if (session !== readerSession) return;
 
       // Determine starting chapter from saved position
-      const startChapter = Math.min(
-        book.lastReadChapterIndex || 0,
-        chapters.length - 1
-      );
+      const startChapter = Math.max(0, Math.min(book.lastReadChapterIndex || 0, chapters.length - 1));
+      const savedProgress = Number.isFinite(book.readingProgress)
+        ? Math.min(Math.max(book.readingProgress, 0), 100)
+        : 0;
 
       // Load reader settings from localStorage
-      const savedMode = localStorage.getItem('reader-mode') as ReadingMode | null;
-      const savedSize = localStorage.getItem('reader-size') as ReadingSize | null;
-      const readingMode = savedMode || 'bilingual';
-      const readingSize = savedSize || 'L';
+      const readingMode = readStoredReadingMode();
+      const readingSize = readStoredReadingSize();
 
       // Update lastOpenedAt
       await db.books.update(bookId, { lastOpenedAt: Date.now() });
+      if (session !== readerSession) return;
 
       set({
         bookTitle: book.title,
@@ -138,11 +179,11 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         totalSentences,
         currentChapterIndex: startChapter,
         currentSentenceId: book.lastReadSentenceId,
-        readingProgress: book.readingProgress || 0,
+        readingProgress: savedProgress,
         readingMode,
         readingSize,
         readingSizeValues: READING_SIZES[readingSize],
-        lineHeightMultiplier: Number(localStorage.getItem('reader-line-height')) || 1.0,
+        lineHeightMultiplier: readStoredLineHeight(),
         isLoading: false,
         isContentsOpen: window.innerWidth >= 1280,
       });
@@ -151,6 +192,11 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       const state = get();
       const startId = chapters[startChapter]?.id;
       if (startId) await state.loadChapterSentences(startId);
+      if (session !== readerSession) return;
+      if (!get().currentSentenceId && get().currentChapterIndex === startChapter && startId) {
+        const firstSentence = get().chapterSentences[startId]?.[0];
+        if (firstSentence) set({ currentSentenceId: firstSentence.id });
+      }
 
       // Load adjacent chapters
       if (startChapter > 0) {
@@ -161,14 +207,20 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         const nextId = chapters[startChapter + 1]?.id;
         if (nextId) state.loadChapterSentences(nextId);
       }
-    } catch (error: any) {
-      set({ isLoading: false, loadError: error.message || 'Lỗi khi tải sách' });
+    } catch (error: unknown) {
+      if (session !== readerSession) return;
+      const message = error instanceof Error ? error.message : 'Lỗi khi tải sách';
+      set({ isLoading: false, loadError: message });
     }
   },
 
   loadChapterSentences: async (chapterId) => {
     const state = get();
     if (state.chapterSentences[chapterId] || state.loadingChapterIds.includes(chapterId)) return;
+
+    const session = readerSession;
+    const bookId = state.bookId;
+    if (!bookId || !state.chapters.some(chapter => chapter.id === chapterId)) return;
 
     set({ loadingChapterIds: [...state.loadingChapterIds, chapterId] });
     try {
@@ -177,11 +229,20 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         .between([chapterId, 0], [chapterId, Infinity])
         .toArray();
 
-      set((s) => ({
-        chapterSentences: { ...s.chapterSentences, [chapterId]: sentences },
-        loadingChapterIds: s.loadingChapterIds.filter(id => id !== chapterId),
-      }));
+      if (session !== readerSession || get().bookId !== bookId) return;
+
+      set((s) => {
+        const index = s.chapters.findIndex(chapter => chapter.id === chapterId);
+        // A preload may finish after navigation has evicted its window.
+        // Do not repopulate distant chapters with that stale result.
+        const inWindow = index >= 0 && Math.abs(index - s.currentChapterIndex) <= 2;
+        return {
+          chapterSentences: inWindow ? { ...s.chapterSentences, [chapterId]: sentences } : s.chapterSentences,
+          loadingChapterIds: s.loadingChapterIds.filter(id => id !== chapterId),
+        };
+      });
     } catch {
+      if (session !== readerSession || get().bookId !== bookId) return;
       set((s) => ({
         loadingChapterIds: s.loadingChapterIds.filter(id => id !== chapterId),
       }));
@@ -190,6 +251,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
   unloadChapter: (chapterId) => {
     set((s) => {
+      if (!s.chapterSentences[chapterId]) return s;
       const { [chapterId]: _, ...rest } = s.chapterSentences;
       return { chapterSentences: rest };
     });
@@ -197,14 +259,13 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
   setCurrentChapter: (index) => {
     const state = get();
-    if (index === state.currentChapterIndex) return;
-    set({ currentChapterIndex: index });
+    if (!Number.isInteger(index) || index < 0 || index >= state.chapters.length || index === state.currentChapterIndex) return;
 
     // Calculate reading progress
     const progress = state.chapters.length > 0
       ? Math.round(((index + 1) / state.chapters.length) * 100)
       : 0;
-    set({ readingProgress: progress });
+    set({ currentChapterIndex: index, readingProgress: progress });
 
     // Preload adjacent chapters
     const { chapters } = state;
@@ -230,38 +291,47 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   setCurrentSentence: (sentenceId) => {
-    set({ currentSentenceId: sentenceId });
+    set((state) => state.currentSentenceId === sentenceId ? state : { currentSentenceId: sentenceId });
   },
 
   updateChapterHeight: (chapterId, height) => {
-    set((s) => ({
-      chapterHeights: { ...s.chapterHeights, [chapterId]: height },
-    }));
+    if (!Number.isFinite(height) || height < 0) return;
+    set((s) => {
+      if (s.chapterHeights[chapterId] === height) {
+        return s;
+      }
+      return {
+        chapterHeights: { ...s.chapterHeights, [chapterId]: height },
+      };
+    });
   },
 
   setReadingMode: (mode) => {
+    if (!READING_MODES.includes(mode)) return;
     set({ readingMode: mode });
     localStorage.setItem('reader-mode', mode);
   },
 
   setReadingSize: (size) => {
+    if (!READING_SIZE_KEYS.includes(size)) return;
     set({ readingSize: size, readingSizeValues: READING_SIZES[size] });
     localStorage.setItem('reader-size', size);
   },
 
   setLineHeightMultiplier: (mult) => {
+    if (mult !== 1 && mult !== 1.2 && mult !== 1.5) return;
     set({ lineHeightMultiplier: mult });
     localStorage.setItem('reader-line-height', String(mult));
   },
 
   toggleContents: () => set((s) => ({ isContentsOpen: !s.isContentsOpen })),
   toggleSettings: () => set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
-  setTopBarVisible: (v) => set({ isTopBarVisible: v }),
+  setTopBarVisible: (v) => set((state) => state.isTopBarVisible === v ? state : { isTopBarVisible: v }),
 
   jumpToLocation: (index, sentenceId) => {
     const state = get();
     const { chapters } = state;
-    if (index < 0 || index >= chapters.length) return;
+    if (!Number.isInteger(index) || index < 0 || index >= chapters.length) return;
 
     set({
       currentChapterIndex: index,
@@ -294,15 +364,19 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   clearJumpTarget: () => set({ jumpTargetChapterIndex: null, jumpTargetSentenceId: null }),
 
   saveReadingPosition: async () => {
-    const { bookId, currentChapterIndex, currentSentenceId, readingProgress } = get();
-    if (!bookId) return;
+    const { bookId, currentChapterIndex, currentSentenceId, readingProgress, isLoading, loadError, chapters } = get();
+    // StrictMode and fast navigation can clean up an unfinished initialization.
+    // Its placeholder position must never overwrite the last persisted position.
+    if (!bookId || isLoading || loadError || chapters.length === 0) return;
     try {
       await db.books.update(bookId, {
         lastReadChapterIndex: currentChapterIndex,
         lastReadSentenceId: currentSentenceId,
         readingProgress,
       });
-    } catch { /* ignore save errors */ }
+    } catch (error) {
+      console.error('Failed to save reading position', error);
+    }
   },
 
   updateSentenceInStore: (chapterId, sentenceId, updates) => {
@@ -313,6 +387,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       const newSentences = sentences.map(s => 
         s.id === sentenceId ? { ...s, ...updates } : s
       );
+      if (newSentences.every((sentence, index) => sentence === sentences[index])) return state;
       
       return {
         chapterSentences: {
@@ -327,6 +402,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     // Save final position before cleanup
     const state = get();
     state.saveReadingPosition();
+    readerSession++;
     set({
       bookId: null,
       bookTitle: '',

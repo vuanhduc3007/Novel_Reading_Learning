@@ -56,7 +56,7 @@ export function LibraryPage() {
       );
     }
     
-    return filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       if (sortOption === 'recent') {
         const timeA = a.lastOpenedAt || a.createdAt || 0;
         const timeB = b.lastOpenedAt || b.createdAt || 0;
@@ -110,7 +110,6 @@ export function LibraryPage() {
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="Tìm kiếm sách..."
-              style={{ width: '320px' }}
             />
             <Dropdown
               value={sortOption}

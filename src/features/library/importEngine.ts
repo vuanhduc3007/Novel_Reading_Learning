@@ -43,7 +43,9 @@ export async function importBook(
   const bookId = generateId();
   const format = detectFormat(file);
 
-  // Create initial book record in DB immediately (shows in Library as importing)
+  // Keep the in-progress import outside IndexedDB. Only a complete readable
+  // book is committed, so closing/reloading the tab cannot leave a permanent
+  // zero-chapter record behind.
   const initialBook: Book = {
     id: bookId,
     title: file.name.replace(/\.[^.]+$/, ''),
@@ -60,13 +62,10 @@ export async function importBook(
     createdAt: Date.now(),
     chapterCount: 0,
   };
-  await db.books.add(initialBook);
-
   try {
     // STEP 1: Uploading (0-20%) — Read file into ArrayBuffer
     onProgress?.({ step: 'uploading', percent: 0, detail: 'Reading file...' });
     const arrayBuffer = await file.arrayBuffer();
-    await db.books.update(bookId, { importStatus: 'parsing' as ImportStatus });
     onProgress?.({ step: 'uploading', percent: 20, detail: 'File loaded' });
 
     // STEP 2: Parsing (20-40%) — Parse file structure
@@ -89,18 +88,10 @@ export async function importBook(
       }
     }
 
-    await db.books.update(bookId, {
-      title: parsedData.title,
-      author: parsedData.author,
-      coverUrl: parsedData.coverDataUrl,
-      importStatus: 'extracting' as ImportStatus,
-    });
     onProgress?.({ step: 'parsing', percent: 40, detail: `Found ${parsedData.chapters.length} chapters` });
 
     // STEP 3: Extracting chapters (40-70%) — Store chapters
     onProgress?.({ step: 'extracting', percent: 40, detail: 'Extracting chapters...' });
-    await db.books.update(bookId, { importStatus: 'extracting' as ImportStatus });
-
     const chapterRecords: Chapter[] = [];
     const allSentences: Sentence[] = [];
 
@@ -137,40 +128,44 @@ export async function importBook(
       });
     }
 
-    // STEP 4: Processing text (70-100%) — Bulk write to IndexedDB
-    onProgress?.({ step: 'processing', percent: 70, detail: 'Saving to library...' });
-    await db.books.update(bookId, { importStatus: 'processing' as ImportStatus });
-
-    // Bulk insert chapters
-    await db.chapters.bulkAdd(chapterRecords);
-    onProgress?.({ step: 'processing', percent: 80, detail: `Saved ${chapterRecords.length} chapters` });
-
-    // Bulk insert sentences in batches (for very large books)
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < allSentences.length; i += BATCH_SIZE) {
-      const batch = allSentences.slice(i, i + BATCH_SIZE);
-      await db.sentences.bulkAdd(batch);
-      const percent = 80 + Math.round(((i + batch.length) / allSentences.length) * 18);
-      onProgress?.({
-        step: 'processing',
-        percent: Math.min(percent, 98),
-        detail: `Saved ${Math.min(i + batch.length, allSentences.length)}/${allSentences.length} sentences`,
-      });
+    if (allSentences.length === 0) {
+      throw new Error('Không tìm thấy câu có thể đọc trong file');
     }
 
-    // STEP 5: Ready!
-    await db.books.update(bookId, {
-      importStatus: 'ready_to_read' as ImportStatus,
-      chapterCount: chapterRecords.length,
+    // STEP 4: Processing text (70-100%) — Bulk write to IndexedDB
+    onProgress?.({ step: 'processing', percent: 70, detail: 'Saving to library...' });
+    // Commit a complete readable book atomically. A failed batch cannot leave
+    // orphan chapters/sentences behind a failed import record.
+    await db.transaction('rw', [db.books, db.chapters, db.sentences], async () => {
+      await db.books.add({
+        ...initialBook,
+        title: parsedData.title,
+        author: parsedData.author,
+        coverUrl: parsedData.coverDataUrl,
+        importStatus: 'ready_to_read' as ImportStatus,
+        chapterCount: chapterRecords.length,
+      });
+      await db.chapters.bulkAdd(chapterRecords);
+      onProgress?.({ step: 'processing', percent: 80, detail: `Saved ${chapterRecords.length} chapters` });
+
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allSentences.length; i += BATCH_SIZE) {
+        const batch = allSentences.slice(i, i + BATCH_SIZE);
+        await db.sentences.bulkAdd(batch);
+        const percent = 80 + Math.round(((i + batch.length) / allSentences.length) * 18);
+        onProgress?.({
+          step: 'processing',
+          percent: Math.min(percent, 98),
+          detail: `Saved ${Math.min(i + batch.length, allSentences.length)}/${allSentences.length} sentences`,
+        });
+      }
     });
+
+    // STEP 5: Ready!
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });
 
     return bookId;
   } catch (error) {
-    // Mark book as failed
-    await db.books.update(bookId, {
-      importStatus: 'failed' as ImportStatus,
-    }).catch(() => {}); // Ignore if update fails too
     throw error;
   }
 }
@@ -213,23 +208,8 @@ export async function replaceBook(
   file: File,
   onProgress?: ProgressCallback
 ): Promise<string> {
-  // Delete old data (keep vocabulary)
-  await db.transaction('rw', [db.chapters, db.sentences, db.bookmarks], async () => {
-    await db.sentences.where('bookId').equals(bookId).delete();
-    await db.chapters.where('bookId').equals(bookId).delete();
-    await db.bookmarks.where('bookId').equals(bookId).delete();
-  });
-
-  // Reset book state
-  await db.books.update(bookId, {
-    importStatus: 'uploading' as ImportStatus,
-    readingProgress: 0,
-    translationProgress: 0,
-    lastReadSentenceId: null,
-    lastReadChapterIndex: 0,
-  });
-
-  // Re-run import pipeline, reusing the same bookId
+  // Parse and build the replacement before touching existing persisted data.
+  // A malformed replacement must leave the user's readable book intact.
   const format = detectFormat(file);
 
   try {
@@ -255,14 +235,6 @@ export async function replaceBook(
       }
     }
 
-    await db.books.update(bookId, {
-      title: parsedData.title,
-      author: parsedData.author,
-      coverUrl: parsedData.coverDataUrl,
-      sourceFormat: format,
-      fileSizeBytes: file.size,
-      importStatus: 'extracting' as ImportStatus,
-    });
     onProgress?.({ step: 'parsing', percent: 40, detail: `Found ${parsedData.chapters.length} chapters` });
 
     onProgress?.({ step: 'extracting', percent: 40 });
@@ -294,26 +266,49 @@ export async function replaceBook(
       });
     }
 
-    onProgress?.({ step: 'processing', percent: 70, detail: 'Saving to library...' });
-    await db.chapters.bulkAdd(chapterRecords);
-
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < allSentences.length; i += BATCH_SIZE) {
-      const batch = allSentences.slice(i, i + BATCH_SIZE);
-      await db.sentences.bulkAdd(batch);
-      const percent = 80 + Math.round(((i + batch.length) / allSentences.length) * 18);
-      onProgress?.({ step: 'processing', percent: Math.min(percent, 98) });
+    if (allSentences.length === 0) {
+      throw new Error('Không tìm thấy câu có thể đọc trong file thay thế');
     }
 
-    await db.books.update(bookId, {
-      importStatus: 'ready_to_read' as ImportStatus,
-      chapterCount: chapterRecords.length,
+    onProgress?.({ step: 'processing', percent: 70, detail: 'Saving to library...' });
+    translationQueue.cancelAllForBook(bookId);
+    await db.transaction('rw', [db.books, db.chapters, db.sentences, db.bookmarks], async () => {
+      const existing = await db.books.get(bookId);
+      if (!existing) throw new Error('Không tìm thấy sách cần thay thế');
+
+      await db.sentences.where('bookId').equals(bookId).delete();
+      await db.chapters.where('bookId').equals(bookId).delete();
+      await db.bookmarks.where('bookId').equals(bookId).delete();
+      await db.chapters.bulkAdd(chapterRecords);
+
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allSentences.length; i += BATCH_SIZE) {
+        const batch = allSentences.slice(i, i + BATCH_SIZE);
+        await db.sentences.bulkAdd(batch);
+        const percent = 80 + Math.round(((i + batch.length) / allSentences.length) * 18);
+        onProgress?.({ step: 'processing', percent: Math.min(percent, 98) });
+      }
+
+      await db.books.update(bookId, {
+        title: parsedData.title,
+        author: parsedData.author,
+        coverUrl: parsedData.coverDataUrl,
+        sourceFormat: format,
+        fileSizeBytes: file.size,
+        importStatus: 'ready_to_read' as ImportStatus,
+        chapterCount: chapterRecords.length,
+        readingProgress: 0,
+        translationProgress: 0,
+        lastReadSentenceId: null,
+        lastReadChapterIndex: 0,
+      });
     });
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });
 
     return bookId;
   } catch (error) {
-    await db.books.update(bookId, { importStatus: 'failed' as ImportStatus }).catch(() => {});
+    // Existing data is deliberately preserved when parsing or the atomic swap
+    // fails; the modal surfaces the error without destroying the old book.
     throw error;
   }
 }

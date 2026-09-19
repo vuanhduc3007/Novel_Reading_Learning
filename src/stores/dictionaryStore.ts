@@ -29,6 +29,8 @@ interface DictionaryStoreState {
 
 // Timeout ref for debouncing hover
 let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+let hoverRequestId = 0;
+let panelRequestId = 0;
 
 export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
   hoveredWord: null,
@@ -44,21 +46,24 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
     // Debounce hover to prevent spamming
     if (hoverTimeout) clearTimeout(hoverTimeout);
     
+    const requestId = ++hoverRequestId;
     hoverTimeout = setTimeout(async () => {
       // Show tooltip immediately with skeleton if we wanted, 
       // but for hover, spec says Local/Cache only, which is fast.
-      const result = await lookupWord(word, false);
-      
-      set({
-        hoveredWord: word,
-        hoverPosition: position,
-        tooltipResult: result,
-      });
+      try {
+        const result = await lookupWord(word, false);
+        if (requestId !== hoverRequestId) return;
+        set({ hoveredWord: word, hoverPosition: position, tooltipResult: result });
+      } catch {
+        // Hover lookups are best-effort and must never affect reader rendering.
+      }
     }, 150); // 150ms debounce
   },
 
   handleWordLeave: () => {
     if (hoverTimeout) clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+    hoverRequestId++;
     set({
       hoveredWord: null,
       hoverPosition: null,
@@ -67,6 +72,10 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
   },
 
   handleWordClick: async (word) => {
+    if (hoverTimeout) clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+    hoverRequestId++;
+    const requestId = ++panelRequestId;
     // Close tooltip, open panel
     set({
       hoveredWord: null,
@@ -80,6 +89,7 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
 
     try {
       const result = await lookupWord(word, true);
+      if (requestId !== panelRequestId || get().panelWord !== word || !get().isPanelOpen) return;
       
       if (result) {
         set({
@@ -90,11 +100,13 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
         set({ panelState: 'unavailable', panelResult: null });
       }
     } catch (e) {
+      if (requestId !== panelRequestId || get().panelWord !== word || !get().isPanelOpen) return;
       set({ panelState: 'error', panelResult: null });
     }
   },
 
   closePanel: () => {
+    panelRequestId++;
     set({
       isPanelOpen: false,
       panelState: 'closed',

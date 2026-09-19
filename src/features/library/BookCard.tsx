@@ -27,9 +27,9 @@ export function BookCard({ book, onReplace }: { book: Book; onReplace?: (bookId:
   const handleDelete = async () => {
     try {
       await deleteBook(book.id);
-      showToast('success', `Đã xóa "${book.title}"`);
+      showToast(`Đã xóa "${book.title}"`, 'success');
     } catch (e) {
-      showToast('error', 'Lỗi khi xóa sách');
+      showToast('Lỗi khi xóa sách', 'error');
     }
   };
 
@@ -65,7 +65,7 @@ export function BookCard({ book, onReplace }: { book: Book; onReplace?: (bookId:
             </div>
           )}
           
-          {book.importStatus === 'error' && (
+          {book.importStatus === 'failed' && (
             <div className={styles.statusBadge}>
               <Badge variant="error">Nhập thất bại</Badge>
             </div>
@@ -97,7 +97,7 @@ export function BookCard({ book, onReplace }: { book: Book; onReplace?: (bookId:
           <div className={styles.title} title={book.title}>{book.title}</div>
           <div className={styles.author}>{book.author || 'Không rõ tác giả'}</div>
           {book.readingProgress !== undefined && book.readingProgress > 0 && (
-            <ProgressBar progress={book.readingProgress} className={styles.progress} />
+            <ProgressBar value={book.readingProgress} className={styles.progress} />
           )}
           <div className={styles.meta}>
             {book.lastOpenedAt ? `Mở ${getRelativeTime(book.lastOpenedAt)}` : 'Chưa đọc'}

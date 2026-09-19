@@ -11,14 +11,16 @@ export interface ProgressBarProps {
 }
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({ 
-  value, 
+  value = 0,
   variant = 'thin', 
   label, 
   showPercent,
   color = 'var(--color-accent, #007bff)',
   className = ''
 }) => {
-  const clampedValue = Math.min(Math.max(value, 0), 100);
+  // Consumers can be fed persisted data from older app versions. Never allow a
+  // malformed value to become `NaN%`, which produces a broken progress bar.
+  const clampedValue = Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0;
 
   return (
     <div className={`${styles.container} ${className}`}>

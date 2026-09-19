@@ -49,7 +49,7 @@ export const useLibraryStore = create<LibraryUIState>((set) => ({
   closeImportModal: () =>
     set({ isImportModalOpen: false, isImporting: false, importProgress: null, importError: null, importedBookId: null }),
   setImportProgress: (p) => set({ importProgress: p }),
-  setImportError: (e) => set({ importError: e, isImporting: false }),
+  setImportError: (e) => set(e === null ? { importError: null } : { importError: e, isImporting: false }),
   setIsImporting: (v) => set({ isImporting: v }),
   setImportedBookId: (id) => set({ importedBookId: id, isImporting: false }),
   resetImportState: () =>

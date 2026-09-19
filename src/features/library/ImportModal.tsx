@@ -38,17 +38,20 @@ export const ImportModal: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleClose = () => {
+    if (isImporting) return;
     closeImportModal();
-    // small delay to let animation finish before reset
-    setTimeout(resetImportState, 300);
   };
 
   const processFile = async (file: File) => {
+    if (useLibraryStore.getState().isImporting) return;
     if (!isValidFile(file)) {
       setImportError('Định dạng file không hỗ trợ. Vui lòng chọn EPUB, TXT, HTML hoặc MD.');
       return;
     }
 
+    // `ImportProcessing` renders immediately after this update. Seed a
+    // progress object first so it never dereferences null during that render.
+    setImportProgress({ step: 'uploading', percent: 0, detail: 'Reading file...' });
     setIsImporting(true);
     setImportError(null);
 
@@ -73,7 +76,7 @@ export const ImportModal: React.FC = () => {
     // Check if the dragged item is valid (rough check during drag)
     if (e.dataTransfer.items.length > 0) {
       const item = e.dataTransfer.items[0];
-      if (item.kind === 'file') {
+      if (item?.kind === 'file') {
         // Can't reliably check extension here in all browsers, so just accept it visually until drop
         setDragInvalid(false);
       }
@@ -91,13 +94,13 @@ export const ImportModal: React.FC = () => {
     setIsDragOver(false);
     setDragInvalid(false);
     
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.files?.[0]) {
       processFile(e.dataTransfer.files[0]);
     }
   }, [importMode, replaceBookId]);
 
   const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
+    if (e.target.files?.[0]) {
       processFile(e.target.files[0]);
     }
     // Reset input so the same file can be selected again if needed

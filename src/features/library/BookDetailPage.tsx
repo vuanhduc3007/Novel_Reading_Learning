@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, BookOpen, HardDrive, Bookmark, Languages, Trash2, RefreshCw } from 'lucide-react';
@@ -19,7 +19,7 @@ function formatFileSize(bytes?: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
 
-function formatRelativeTime(date?: number): string {
+function formatRelativeTime(date?: number | null): string {
   if (!date) return 'chưa mở';
   
   const now = new Date();
@@ -54,7 +54,7 @@ export const BookDetailPage: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const book = useLiveQuery(
-    () => bookId ? db.books.get(bookId) : undefined,
+    async () => bookId ? (await db.books.get(bookId)) ?? null : null,
     [bookId]
   );
   
@@ -70,6 +70,16 @@ export const BookDetailPage: React.FC = () => {
 
   const translatedSentences = useLiveQuery(
     () => bookId ? db.sentences.where('bookId').equals(bookId).and(s => s.translationStatus === 'ready').count() : 0,
+    [bookId]
+  ) || 0;
+
+  const bookmarkCount = useLiveQuery(
+    () => bookId ? db.bookmarks.where('bookId').equals(bookId).count() : 0,
+    [bookId]
+  ) || 0;
+
+  const vocabularyCount = useLiveQuery(
+    () => bookId ? db.vocabularyItems.where('sourceBookId').equals(bookId).count() : 0,
     [bookId]
   ) || 0;
 
@@ -96,6 +106,12 @@ export const BookDetailPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (book === null) {
+      navigate('/', { replace: true });
+    }
+  }, [book, navigate]);
+
   if (book === undefined) {
     return (
       <div className={styles.page}>
@@ -113,13 +129,14 @@ export const BookDetailPage: React.FC = () => {
   }
 
   if (book === null) {
-    // Book not found, redirect to library soon, or show error
-    setTimeout(() => navigate('/'), 100);
-    return null;
+    return <div className={styles.page}>Không tìm thấy sách. Đang quay lại thư viện…</div>;
   }
 
-  const readPercent = (book.readingProgress?.percent || 0).toFixed(1);
-  const currentChap = book.readingProgress?.currentChapterId || '1'; // Simplification for now
+  const safeReadingProgress = Number.isFinite(book.readingProgress)
+    ? Math.min(Math.max(book.readingProgress, 0), 100)
+    : 0;
+  const readPercent = safeReadingProgress.toFixed(1);
+  const currentChap = Math.min(book.lastReadChapterIndex + 1, chaptersCount || 1);
 
   return (
     <div className={styles.page}>
@@ -143,7 +160,7 @@ export const BookDetailPage: React.FC = () => {
           <div className={styles.author}>{book.author || 'Không rõ tác giả'}</div>
           
           <div className={styles.metaRow}>
-            <Badge variant="labeled">{book.sourceFormat.toUpperCase()}</Badge>
+            <Badge>{book.sourceFormat.toUpperCase()}</Badge>
             <div className={styles.metaItem}>
               <HardDrive size={14} />
               {formatFileSize(book.fileSizeBytes)}
@@ -155,7 +172,7 @@ export const BookDetailPage: React.FC = () => {
           
           <div className={styles.section}>
             <div className={styles.sectionLabel}>Tiến trình đọc</div>
-            <ProgressBar progress={book.readingProgress?.percent || 0} variant="labeled" />
+            <ProgressBar value={safeReadingProgress} variant="labeled" />
             <div className={styles.progressInfo}>
               Chương {currentChap}/{chaptersCount || '?'} · {readPercent}% · Mở lần cuối: {formatRelativeTime(book.lastOpenedAt)}
             </div>
@@ -163,17 +180,17 @@ export const BookDetailPage: React.FC = () => {
           
           <div className={styles.section}>
             <div className={styles.sectionLabel}>Tiến trình dịch</div>
-            <ProgressBar progress={transPercent} variant="labeled" />
+            <ProgressBar value={transPercent} variant="labeled" />
             <div className={styles.progressInfo}>{transPercent}% · {translatedSentences} / {totalSentences} câu</div>
           </div>
           
           <div className={styles.stats}>
             <div className={styles.statItem}>
-              <div className={styles.statValue}>0</div>
+              <div className={styles.statValue}>{bookmarkCount}</div>
               <div className={styles.statLabel}><Bookmark size={14} style={{display:'inline', verticalAlign:'middle', marginRight:'4px'}} />Bookmark</div>
             </div>
             <div className={styles.statItem}>
-              <div className={styles.statValue}>0</div>
+              <div className={styles.statValue}>{vocabularyCount}</div>
               <div className={styles.statLabel}><Languages size={14} style={{display:'inline', verticalAlign:'middle', marginRight:'4px'}} />Từ vựng</div>
             </div>
           </div>
@@ -183,7 +200,7 @@ export const BookDetailPage: React.FC = () => {
           <div className={styles.actions}>
             {!isUnavailable && (
               <Button 
-                variant="labeled" 
+                variant="primary"
                 className={styles.primaryAction} 
                 onClick={() => navigate(`/reader/${book.id}`)}
               >

@@ -27,7 +27,7 @@ export function BookRow({ books }: { books: Book[] }) {
             )}
             <div className={styles.cardOverlay}>
               <div className={styles.cardTitle}>{book.title}</div>
-              <ProgressBar progress={book.readingProgress || 0} className={styles.cardProgress} />
+              <ProgressBar value={book.readingProgress || 0} className={styles.cardProgress} />
             </div>
           </div>
         ))}

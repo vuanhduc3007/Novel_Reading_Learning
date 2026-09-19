@@ -14,6 +14,9 @@ const STEPS = [
 
 export const ImportProcessing: React.FC = () => {
   const { importProgress } = useLibraryStore();
+  if (!importProgress) {
+    return <div className={styles.container}>Đang khởi tạo nhập sách…</div>;
+  }
   
   const currentStepIndex = STEPS.findIndex(s => s.key === importProgress.step);
 

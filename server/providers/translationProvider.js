@@ -32,7 +32,12 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     }
 
     // Concatenate the translated parts (sentences)
-    const translation = data[0].map(part => part[0]).join('');
+    const translation = data[0]
+      .map(part => Array.isArray(part) && typeof part[0] === 'string' ? part[0] : '')
+      .join('');
+    if (!translation) {
+      throw new Error('Malformed response from provider');
+    }
 
     return {
       translation,
@@ -41,9 +46,14 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     };
 
   } catch (error) {
-    if (error.code === 'ECONNABORTED') {
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       const e = new Error('Provider request timed out');
       e.status = 504;
+      throw e;
+    }
+    if (error.response && Number.isInteger(error.response.status)) {
+      const e = new Error(`Provider returned status ${error.response.status}`);
+      e.status = error.response.status;
       throw e;
     }
     throw error; // Re-throw to be caught by the Gateway
@@ -53,4 +63,3 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 module.exports = {
   translateText
 };
-

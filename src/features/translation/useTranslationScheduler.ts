@@ -23,7 +23,9 @@ export function useTranslationScheduler() {
       if (!sentences) continue;
 
       for (const sentence of sentences) {
-        if (sentence.translationStatus === 'not_translated') {
+        // A persisted "translating" row can outlive its request after reload.
+        // The queue's active/queued ID sets, not persisted status, own live work.
+        if (sentence.translationStatus === 'not_translated' || sentence.translationStatus === 'translating') {
           translationQueue.enqueue(sentence);
         }
       }

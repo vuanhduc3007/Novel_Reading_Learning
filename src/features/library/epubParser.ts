@@ -32,10 +32,10 @@ export async function parseEpub(
 
   const parser = new DOMParser();
   const containerDoc = parser.parseFromString(containerXml, 'application/xml');
+  if (containerDoc.querySelector('parsererror')) throw new Error('Invalid EPUB: malformed container.xml');
   
   // Handle namespace — container.xml uses the OCF namespace
-  const rootfileEl = containerDoc.querySelector('rootfile') 
-    || containerDoc.getElementsByTagName('rootfile')[0];
+  const rootfileEl = findElementsByLocalName(containerDoc, 'rootfile')[0];
   const rootfilePath = rootfileEl?.getAttribute('full-path');
   if (!rootfilePath) throw new Error('Invalid EPUB: no rootfile in container.xml');
 
@@ -44,6 +44,7 @@ export async function parseEpub(
   if (!opfXml) throw new Error(`Invalid EPUB: missing ${rootfilePath}`);
 
   const opfDoc = parser.parseFromString(opfXml, 'application/xml');
+  if (opfDoc.querySelector('parsererror')) throw new Error('Invalid EPUB: malformed OPF');
   const opfDir = rootfilePath.includes('/') 
     ? rootfilePath.substring(0, rootfilePath.lastIndexOf('/') + 1) 
     : '';
@@ -69,14 +70,14 @@ export async function parseEpub(
   for (let i = 0; i < spineItemIds.length; i++) {
     const itemId = spineItemIds[i]!;
     const item = manifest.get(itemId);
-    if (!item) continue;
+    if (!item) throw new Error(`Invalid EPUB: spine item ${itemId} is missing from manifest`);
 
     // Only process HTML/XHTML content
     if (!item.mediaType.includes('html') && !item.mediaType.includes('xml')) continue;
 
     const filePath = resolvePath(opfDir, item.href);
     const htmlContent = await readZipText(zip, filePath);
-    if (!htmlContent) continue;
+    if (htmlContent === null) throw new Error(`Invalid EPUB: missing spine document ${filePath}`);
 
     const textContent = extractTextFromXhtml(htmlContent, parser);
     if (!textContent.trim()) continue;
@@ -132,7 +133,7 @@ function getMetadataText(opfDoc: Document, tagName: string): string | null {
     let parent = el.parentNode;
     let inMetadata = false;
     while (parent) {
-      if (parent.nodeName.toLowerCase() === 'metadata') {
+      if ((parent.nodeName.split(':').pop() || '').toLowerCase() === 'metadata') {
         inMetadata = true;
         break;
       }
@@ -144,13 +145,13 @@ function getMetadataText(opfDoc: Document, tagName: string): string | null {
   }
 
   // Fallback: iterate over metadata children explicitly
-  const metadataEl = opfDoc.getElementsByTagName('metadata')[0] || opfDoc.getElementsByTagNameNS('*', 'metadata')[0];
+  const metadataEl = findElementsByLocalName(opfDoc, 'metadata')[0];
   if (metadataEl) {
     for (let i = 0; i < metadataEl.childNodes.length; i++) {
       const child = metadataEl.childNodes[i];
-      if (child.nodeType === 1 /* Element */) {
+      if (child?.nodeType === 1 /* Element */) {
         const elChild = child as Element;
-        if (elChild.localName === tagName) {
+        if (elChild.localName?.toLowerCase() === tagName.toLowerCase()) {
           return elChild.textContent?.trim() || null;
         }
       }
@@ -168,7 +169,7 @@ interface ManifestItem {
 
 function buildManifest(opfDoc: Document): Map<string, ManifestItem> {
   const map = new Map<string, ManifestItem>();
-  const items = opfDoc.getElementsByTagName('item');
+  const items = findElementsByLocalName(opfDoc, 'item');
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     const id = item.getAttribute('id');
@@ -184,7 +185,7 @@ function buildManifest(opfDoc: Document): Map<string, ManifestItem> {
 
 function getSpineItemIds(opfDoc: Document): string[] {
   const ids: string[] = [];
-  const itemrefs = opfDoc.getElementsByTagName('itemref');
+  const itemrefs = findElementsByLocalName(opfDoc, 'itemref');
   for (let i = 0; i < itemrefs.length; i++) {
     const idref = itemrefs[i]!.getAttribute('idref');
     if (idref) ids.push(idref);
@@ -206,7 +207,7 @@ async function extractCover(
   }
 
   // Method 2: meta name="cover" in metadata pointing to manifest item
-  const metaElements = opfDoc.getElementsByTagName('meta');
+  const metaElements = findElementsByLocalName(opfDoc, 'meta');
   for (let i = 0; i < metaElements.length; i++) {
     const meta = metaElements[i]!;
     if (meta.getAttribute('name') === 'cover') {
@@ -229,6 +230,13 @@ async function extractCover(
   }
 
   return null;
+}
+
+function findElementsByLocalName(doc: Document, name: string): Element[] {
+  const normalized = name.toLowerCase();
+  return Array.from(doc.getElementsByTagName('*')).filter(element =>
+    (element.localName || element.nodeName.split(':').pop() || '').toLowerCase() === normalized
+  );
 }
 
 async function readImageAsDataUrl(zip: JSZip, path: string, mediaType: string): Promise<string | null> {
@@ -270,20 +278,24 @@ function extractTextFromXhtml(htmlContent: string, parser: DOMParser): string {
   const body = doc.body || doc.documentElement;
   if (!body) return '';
 
-  // Extract text from block-level elements, preserving paragraph structure
-  const blocks = body.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, dt, dd, figcaption');
-  
-  if (blocks.length > 0) {
-    const texts: string[] = [];
-    blocks.forEach(block => {
-      const text = block.textContent?.trim();
-      if (text) texts.push(text);
-    });
-    return texts.join('\n');
-  }
-
-  // Fallback: get all text content
-  return body.textContent?.trim() || '';
+  // Visit each text node exactly once. Reading textContent of both a wrapper
+  // div and its child paragraphs duplicates the book, including translations.
+  const blockNames = new Set(['p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'td', 'th', 'dt', 'dd', 'figcaption', 'br']);
+  const paragraphs: string[] = [];
+  let current = '';
+  const flush = () => { if (current.trim()) paragraphs.push(current.trim()); current = ''; };
+  const visit = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) { current += node.textContent || ''; return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const name = (node as Element).localName.toLowerCase();
+    if (['script', 'style', 'noscript'].includes(name)) return;
+    if (blockNames.has(name)) flush();
+    node.childNodes.forEach(visit);
+    if (blockNames.has(name)) flush();
+  };
+  visit(body);
+  flush();
+  return paragraphs.join('\n');
 }
 
 function extractChapterTitle(htmlContent: string, parser: DOMParser): string | null {

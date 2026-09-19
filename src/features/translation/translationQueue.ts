@@ -3,60 +3,88 @@ import { useReaderStore } from '../../stores/readerStore';
 import { translationProvider } from './TranslationProvider';
 import type { Sentence } from '../../types';
 
+interface QueueEntry {
+  sentence: Sentence;
+  generation: number;
+}
+
 class TranslationQueue {
-  private queue: Sentence[] = [];
+  private queue: QueueEntry[] = [];
   private activeCount = 0;
   private readonly CONCURRENCY = 3;
-  private pendingBooks = new Set<string>(); // Books allowed to translate
+  private readonly bookGenerations = new Map<string, number>();
+  private readonly queuedSentenceIds = new Set<string>();
+  private readonly activeRequests = new Map<string, { bookId: string; generation: number; controller: AbortController }>();
 
   enqueue(sentence: Sentence) {
-    if (sentence.translationStatus === 'translating' || sentence.translationStatus === 'ready') return;
-    if (this.queue.some(s => s.id === sentence.id)) return; // Already queued
-    
-    this.queue.push(sentence);
-    this.pendingBooks.add(sentence.bookId);
+    if (sentence.translationStatus === 'ready') return;
+    if (this.queuedSentenceIds.has(sentence.id) || this.activeRequests.has(sentence.id)) return;
+
+    const generation = this.bookGenerations.get(sentence.bookId) ?? 0;
+    this.queue.push({ sentence, generation });
+    this.queuedSentenceIds.add(sentence.id);
     this.processNext();
   }
 
   cancelAllForBook(bookId: string) {
-    this.pendingBooks.delete(bookId);
-    this.queue = this.queue.filter(s => s.bookId !== bookId);
+    this.bookGenerations.set(bookId, (this.bookGenerations.get(bookId) ?? 0) + 1);
+    this.queue = this.queue.filter(entry => {
+      if (entry.sentence.bookId !== bookId) return true;
+      this.queuedSentenceIds.delete(entry.sentence.id);
+      return false;
+    });
+    for (const request of this.activeRequests.values()) {
+      if (request.bookId === bookId) request.controller.abort();
+    }
   }
 
-  private async processNext() {
-    if (this.activeCount >= this.CONCURRENCY || this.queue.length === 0) return;
-    
-    const sentence = this.queue.shift()!;
-    if (!this.pendingBooks.has(sentence.bookId)) {
-      // Cancelled
-      this.processNext();
-      return;
-    }
+  private isCurrent(entry: QueueEntry): boolean {
+    return (this.bookGenerations.get(entry.sentence.bookId) ?? 0) === entry.generation;
+  }
 
-    this.activeCount++;
+  private processNext() {
+    while (this.activeCount < this.CONCURRENCY && this.queue.length > 0) {
+      const entry = this.queue.shift()!;
+      this.queuedSentenceIds.delete(entry.sentence.id);
+      if (!this.isCurrent(entry)) continue;
+      this.activeCount++;
+      void this.translate(entry).finally(() => {
+        this.activeCount--;
+        this.processNext();
+      });
+    }
+  }
+
+  private async translate(entry: QueueEntry) {
+    const { sentence } = entry;
+    const controller = new AbortController();
+    this.activeRequests.set(sentence.id, { bookId: sentence.bookId, generation: entry.generation, controller });
 
     try {
-      // 1. Mark as translating
+      // Re-read persistent state: a stale React object must never retranslate a
+      // cached sentence, nor should a deleted/replaced sentence reach a provider.
+      const stored = await db.sentences.get(sentence.id);
+      if (!stored || !this.isCurrent(entry) || stored.translationStatus === 'ready') return;
+
       await db.sentences.update(sentence.id, { translationStatus: 'translating' });
+      if (!this.isCurrent(entry)) return;
       useReaderStore.getState().updateSentenceInStore(sentence.chapterId, sentence.id, { translationStatus: 'translating' });
 
-      // 2. Fetch
-      const translatedText = await translationProvider.translate(sentence.chineseText);
+      const translatedText = await translationProvider.translate(sentence.chineseText, controller.signal);
+      if (!this.isCurrent(entry)) return;
 
-      // Check if cancelled during fetch
-      if (!this.pendingBooks.has(sentence.bookId)) return;
-
-      // 3. Mark as ready
-      await db.sentences.update(sentence.id, { translationStatus: 'ready', vietnameseText: translatedText });
-      useReaderStore.getState().updateSentenceInStore(sentence.chapterId, sentence.id, { translationStatus: 'ready', vietnameseText: translatedText });
-    } catch (e) {
-      if (this.pendingBooks.has(sentence.bookId)) {
-        await db.sentences.update(sentence.id, { translationStatus: 'failed' });
+      const updated = await db.sentences.update(sentence.id, { translationStatus: 'ready', vietnameseText: translatedText });
+      if (updated && this.isCurrent(entry)) {
+        useReaderStore.getState().updateSentenceInStore(sentence.chapterId, sentence.id, { translationStatus: 'ready', vietnameseText: translatedText });
+      }
+    } catch {
+      if (!this.isCurrent(entry) || controller.signal.aborted) return;
+      const updated = await db.sentences.update(sentence.id, { translationStatus: 'failed' });
+      if (updated && this.isCurrent(entry)) {
         useReaderStore.getState().updateSentenceInStore(sentence.chapterId, sentence.id, { translationStatus: 'failed' });
       }
     } finally {
-      this.activeCount--;
-      this.processNext();
+      this.activeRequests.delete(sentence.id);
     }
   }
 }

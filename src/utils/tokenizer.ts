@@ -13,8 +13,9 @@ export function tokenize(text: string): Token[] {
   const isPunctuation = (char: string) => /[。！？；…，、：""''（）《》\s\n]/.test(char);
 
   while (i < text.length) {
-    if (isPunctuation(text[i])) {
-      result.push({ text: text[i], isWord: false });
+    const character = text.charAt(i);
+    if (isPunctuation(character)) {
+      result.push({ text: character, isWord: false });
       i++;
       continue;
     }
@@ -36,7 +37,7 @@ export function tokenize(text: string): Token[] {
       i += match.length;
     } else {
       // fallback to single character
-      result.push({ text: text[i], isWord: true });
+      result.push({ text: character, isWord: true });
       i++;
     }
   }

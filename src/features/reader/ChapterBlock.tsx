@@ -14,23 +14,39 @@ interface ChapterBlockProps {
 
 export function ChapterBlock({ chapter, chapterIndex, sentences, readingMode, onHeightChange }: ChapterBlockProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef<number | null>(null);
+  const onHeightChangeRef = useRef(onHeightChange);
+
+  // Keep the ref updated so the observer always calls the latest callback
+  // without needing to be recreated.
+  useEffect(() => {
+    onHeightChangeRef.current = onHeightChange;
+  }, [onHeightChange]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    const reportHeight = (h: number) => {
+      // Discard sub-pixel differences or exact matches to prevent infinite loops
+      const roundedHeight = Math.round(h);
+      if (lastHeightRef.current === roundedHeight) return;
+      lastHeightRef.current = roundedHeight;
+      onHeightChangeRef.current(roundedHeight);
+    };
+
     // Measure initial height
-    onHeightChange(el.offsetHeight);
+    reportHeight(el.getBoundingClientRect().height);
 
     // Watch for resize
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        onHeightChange(entry.contentRect.height + /* padding */ 0);
-      }
+    const observer = new ResizeObserver(() => {
+      // Placeholders replace the entire border box, not just its content.
+      reportHeight(el.getBoundingClientRect().height);
     });
-    observer.observe(el);
+    observer.observe(el, { box: 'border-box' });
+
     return () => observer.disconnect();
-  }, [sentences.length, onHeightChange]);
+  }, [sentences.length]); // Intentionally omitting onHeightChange to prevent observer recreation
 
   return (
     <div

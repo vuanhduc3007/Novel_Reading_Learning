@@ -5,10 +5,12 @@ import { Skeleton } from '../../components';
 import styles from './ReaderContent.module.css';
 
 // Throttle utility (inline)
-function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
+type Throttled<T extends (...args: any[]) => void> = T & { cancel: () => void };
+
+function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): Throttled<T> {
   let lastCall = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return ((...args: any[]) => {
+  const throttled = ((...args: any[]) => {
     const now = Date.now();
     if (now - lastCall >= ms) {
       lastCall = now;
@@ -20,17 +22,22 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
         fn(...args);
       }, ms - (now - lastCall));
     }
-  }) as T;
+  }) as Throttled<T>;
+  throttled.cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  return throttled;
 }
 
 export function ReaderContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionRestoredRef = useRef(false);
-  const lastJumpRef = useRef<number | null>(null);
 
   // Read store state (individual selectors to minimize re-renders)
   const chapters = useReaderStore(s => s.chapters);
+  const bookId = useReaderStore(s => s.bookId);
   const currentChapterIndex = useReaderStore(s => s.currentChapterIndex);
   const chapterSentences = useReaderStore(s => s.chapterSentences);
   const loadingChapterIds = useReaderStore(s => s.loadingChapterIds);
@@ -41,6 +48,7 @@ export function ReaderContent() {
   const jumpTargetChapterIndex = useReaderStore(s => s.jumpTargetChapterIndex);
   const jumpTargetSentenceId = useReaderStore(s => s.jumpTargetSentenceId);
   const currentSentenceId = useReaderStore(s => s.currentSentenceId);
+  const initialPositionRef = useRef({ chapterIndex: currentChapterIndex, sentenceId: currentSentenceId });
 
   // Actions
   const loadChapterSentences = useReaderStore(s => s.loadChapterSentences);
@@ -50,6 +58,18 @@ export function ReaderContent() {
   const saveReadingPosition = useReaderStore(s => s.saveReadingPosition);
   const clearJumpTarget = useReaderStore(s => s.clearJumpTarget);
   const setTopBarVisible = useReaderStore(s => s.setTopBarVisible);
+
+  // ReaderPage is reused when only :bookId changes. Reset per-book refs so a
+  // prior book cannot suppress restoration or a bookmark jump for the next one.
+  useEffect(() => {
+    positionRestoredRef.current = false;
+    const state = useReaderStore.getState();
+    initialPositionRef.current = { chapterIndex: state.currentChapterIndex, sentenceId: state.currentSentenceId };
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  }, [bookId]);
 
   // Determine which chapters should be mounted (current ± 1)
   const mountedRange = useMemo(() => ({
@@ -67,57 +87,46 @@ export function ReaderContent() {
     }
   }, [mountedRange, chapters, chapterSentences, loadingChapterIds, loadChapterSentences]);
 
-  // Handle chapter jump from Contents sidebar
+  // Resume and explicit jumps share one scroll operation. Wait for the entire
+  // mounted window: loading a preceding neighbor changes the target's offset.
   useEffect(() => {
-    if (jumpTargetChapterIndex === null || jumpTargetChapterIndex === lastJumpRef.current) return;
-    lastJumpRef.current = jumpTargetChapterIndex;
-
-    // Wait for the target chapter's data to load, then scroll to it
-    const targetChapter = chapters[jumpTargetChapterIndex];
-    if (!targetChapter) return;
+    const explicitJump = jumpTargetChapterIndex !== null;
+    if (!explicitJump && positionRestoredRef.current) return;
+    const targetIndex = jumpTargetChapterIndex ?? initialPositionRef.current.chapterIndex;
+    const sentenceId = explicitJump ? jumpTargetSentenceId : initialPositionRef.current.sentenceId;
+    const targetChapter = chapters[targetIndex];
+    if (!targetChapter) {
+      if (explicitJump) clearJumpTarget();
+      return;
+    }
+    for (let i = Math.max(0, targetIndex - 1); i <= Math.min(chapters.length - 1, targetIndex + 1); i++) {
+      if (!chapterSentences[chapters[i]!.id]) return;
+    }
 
     const attemptScroll = () => {
       const container = scrollRef.current;
       if (!container) return;
-      const targetEl = jumpTargetSentenceId
-        ? container.querySelector(`[data-sentence-id="${jumpTargetSentenceId}"]`)
-        : container.querySelector(`[data-chapter-index="${jumpTargetChapterIndex}"]`);
+      const sentenceEl = sentenceId
+        ? Array.from(container.querySelectorAll<HTMLElement>('[data-sentence-id]'))
+            .find(element => element.dataset.sentenceId === sentenceId)
+        : undefined;
+      // A stale/deleted sentence target should still take the user to its
+      // chapter rather than leaving an unconsumable jump in state.
+      const targetEl = sentenceEl
+        || Array.from(container.querySelectorAll<HTMLElement>('[data-chapter-index]'))
+          .find(element => element.dataset.chapterIndex === String(targetIndex));
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
-        clearJumpTarget();
+        positionRestoredRef.current = true;
+        const resolvedSentenceId = sentenceEl?.dataset.sentenceId || chapterSentences[targetChapter.id]?.[0]?.id;
+        if (resolvedSentenceId) setCurrentSentence(resolvedSentenceId);
+        if (explicitJump) clearJumpTarget();
       }
     };
 
-    // Try immediately, then retry after a short delay for rendering
-    requestAnimationFrame(() => {
-      attemptScroll();
-      // Retry after data might have loaded
-      setTimeout(attemptScroll, 100);
-    });
-  }, [jumpTargetChapterIndex, chapterSentences, chapters, clearJumpTarget]);
-
-  // Restore reading position on initial load
-  useEffect(() => {
-    if (positionRestoredRef.current) return;
-    if (!currentSentenceId) {
-      positionRestoredRef.current = true;
-      return;
-    }
-
-    // Wait until the current chapter's sentences are loaded
-    const currentChapter = chapters[currentChapterIndex];
-    if (!currentChapter || !chapterSentences[currentChapter.id]) return;
-
-    positionRestoredRef.current = true;
-    requestAnimationFrame(() => {
-      const container = scrollRef.current;
-      if (!container) return;
-      const sentenceEl = container.querySelector(`[data-sentence-id="${currentSentenceId}"]`);
-      if (sentenceEl) {
-        sentenceEl.scrollIntoView({ behavior: 'auto', block: 'start' });
-      }
-    });
-  }, [currentSentenceId, currentChapterIndex, chapters, chapterSentences]);
+    const animationFrame = requestAnimationFrame(attemptScroll);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [jumpTargetChapterIndex, jumpTargetSentenceId, chapterSentences, chapters, clearJumpTarget, setCurrentSentence]);
 
   // Debounced save of reading position
   const debouncedSave = useCallback(() => {
@@ -141,6 +150,8 @@ export function ReaderContent() {
     if (!container) return;
 
     const handleScroll = throttle(() => {
+      // Layout/placeholder changes during restoration are not user progress.
+      if (!positionRestoredRef.current || useReaderStore.getState().jumpTargetChapterIndex !== null) return;
       const containerRect = container.getBoundingClientRect();
       const viewportTop = containerRect.top + 80; // offset for topbar
 
@@ -181,7 +192,10 @@ export function ReaderContent() {
     }, 150);
 
     container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      handleScroll.cancel();
+    };
   }, [currentChapterIndex, setCurrentChapter, setCurrentSentence, debouncedSave, setTopBarVisible]);
 
   // Reading size CSS variables

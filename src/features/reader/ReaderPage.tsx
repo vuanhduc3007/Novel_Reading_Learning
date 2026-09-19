@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useReaderStore } from '../../stores/readerStore';
+import { useDictionaryStore } from '../../stores/dictionaryStore';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import { ReaderTopBar } from './ReaderTopBar';
 import { ChapterList } from './ChapterList';
@@ -43,13 +44,18 @@ export const ReaderPage: React.FC = () => {
       initializeReader(bookId);
     }
     return () => {
+      useDictionaryStore.getState().handleWordLeave();
+      useDictionaryStore.getState().closePanel();
       cleanup();
     };
   }, [bookId, initializeReader, cleanup]);
 
   useEffect(() => {
     if (!isLoading && jumpChapter && jumpSentence) {
-      jumpToLocation(parseInt(jumpChapter, 10), jumpSentence);
+      const chapterIndex = Number(jumpChapter);
+      if (Number.isInteger(chapterIndex) && chapterIndex >= 0) {
+        jumpToLocation(chapterIndex, jumpSentence);
+      }
     }
   }, [isLoading, jumpChapter, jumpSentence, jumpToLocation]);
 

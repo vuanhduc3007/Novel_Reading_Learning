@@ -8,15 +8,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security: limit body size to 10kb
-app.use(express.json({ limit: '10kb' }));
-
 // CORS configuration - only allow frontend origin in production
 const corsOptions = {
   origin: process.env.FRONTEND_URL || '*',
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+// CORS must also cover body-parser errors returned before route handlers.
+app.use(express.json({ limit: '10kb' }));
 
 // Rate limiting: max 500 requests per 5 minutes per IP
 const limiter = rateLimit({
@@ -28,6 +27,10 @@ app.use('/api/', limiter);
 
 // Import the provider adapter
 const { translateText } = require('./providers/translationProvider');
+
+function isLanguageCode(value) {
+  return typeof value === 'string' && /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(value);
+}
 
 // Lightweight observability logging
 function logRequest(type, provider, status, latency, chars) {
@@ -46,10 +49,10 @@ app.post('/api/translate', async (req, res) => {
   let chars = 0;
 
   try {
-    const { text, sourceLanguage, targetLanguage } = req.body;
+    const { text, sourceLanguage, targetLanguage } = req.body || {};
 
     // Validate payload
-    if (!text || typeof text !== 'string') {
+    if (typeof text !== 'string' || !text.trim()) {
       const latency = Date.now() - reqStart;
       logRequest('translate', provider, 400, latency, chars);
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Invalid text payload' });
@@ -61,8 +64,12 @@ app.post('/api/translate', async (req, res) => {
       logRequest('translate', provider, 400, latency, chars);
       return res.status(400).json({ error: 'PAYLOAD_TOO_LARGE', message: 'Text exceeds maximum length of 500 characters' });
     }
-
-    const apiKey = process.env.TRANSLATION_API_KEY; // Kept secure on server
+    if ((sourceLanguage !== undefined && !isLanguageCode(sourceLanguage)) ||
+        (targetLanguage !== undefined && !isLanguageCode(targetLanguage))) {
+      const latency = Date.now() - reqStart;
+      logRequest('translate', provider, 400, latency, chars);
+      return res.status(400).json({ error: 'INVALID_LANGUAGE', message: 'Invalid language code' });
+    }
 
     // 1. Mock Provider
     if (provider === 'mock') {
@@ -126,17 +133,15 @@ app.post('/api/dictionary', async (req, res) => {
   let chars = 0;
 
   try {
-    const { word } = req.body;
+    const { word } = req.body || {};
 
-    if (!word || typeof word !== 'string' || word.length > 50) {
+    if (typeof word !== 'string' || !word.trim() || word.length > 50) {
       const latency = Date.now() - reqStart;
       logRequest('dictionary', provider, 400, latency, chars);
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Invalid word payload' });
     }
     
     chars = word.length;
-    const apiKey = process.env.DICTIONARY_API_KEY;
-
     if (provider === 'mock') {
       await new Promise(resolve => setTimeout(resolve, 600));
       const latency = Date.now() - reqStart;
@@ -164,7 +169,18 @@ app.post('/api/dictionary', async (req, res) => {
   }
 });
 
+// Keep malformed JSON within the documented API error contract instead of
+// falling through to Express's default HTML error page.
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds 10kb' });
+  }
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({ error: 'INVALID_JSON', message: 'Malformed JSON request body' });
+  }
+  return next(error);
+});
+
 app.listen(PORT, () => {
   console.log(`Backend Gateway running on port ${PORT}`);
 });
-

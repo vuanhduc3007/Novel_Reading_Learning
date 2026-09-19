@@ -21,6 +21,34 @@ const LOCAL_DICT: Record<string, Partial<DictionaryLookupResult>> = {
 // Export WORDS for the tokenizer to use
 export const LOCAL_WORDS = new Set(Object.keys(LOCAL_DICT));
 
+const inFlightExternalLookups = new Map<string, Promise<DictionaryLookupResult>>();
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new DOMException('Dictionary request timed out', 'TimeoutError')), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.ok) throw new Error(`Dictionary API error: ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isDictionaryResult(value: unknown): value is DictionaryLookupResult {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Partial<DictionaryLookupResult>;
+  const nullableString = (field: unknown) => field === null || typeof field === 'string';
+  return typeof result.word === 'string'
+    && nullableString(result.pinyin) && nullableString(result.meaning) && nullableString(result.partOfSpeech)
+    && ['local', 'cache', 'external', 'llm'].includes(result.source || '')
+    && ['complete', 'partial'].includes(result.completeness || '')
+    && Number.isFinite(result.fetchedAt)
+    && Array.isArray(result.examples)
+    && result.examples.every(example => example && typeof example.chinese === 'string' && typeof example.vietnamese === 'string')
+    && Array.isArray(result.relatedWords) && result.relatedWords.every(word => typeof word === 'string');
+}
+
 export async function lookupWord(word: string, allowExternal: boolean = false): Promise<DictionaryLookupResult | null> {
   // 1. Local Dictionary
   if (LOCAL_DICT[word]) {
@@ -40,7 +68,7 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
   // 2. Persistent Cache
   try {
     const cached = await db.dictionaryCache.get(word);
-    if (cached) {
+    if (cached && isDictionaryResult(cached.result) && cached.result.word === word) {
       return cached.result;
     }
   } catch (e) {
@@ -53,56 +81,56 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
 
   const useMock = import.meta.env.VITE_USE_MOCK_API === 'true' || import.meta.env.VITE_USE_MOCK_API === undefined;
 
-  let apiResult: DictionaryLookupResult;
+  const existingRequest = inFlightExternalLookups.get(word);
+  if (existingRequest) return existingRequest;
 
-  if (useMock) {
-    // 3. Mock External Provider (with delay)
-    await new Promise(resolve => setTimeout(resolve, 800)); // Network delay simulation
+  const request = (async (): Promise<DictionaryLookupResult> => {
+    let apiResult: DictionaryLookupResult;
 
-    apiResult = {
-      word,
-      pinyin: "mó nǐ",
-      meaning: `[Generated] Mock meaning for ${word}`,
-      partOfSpeech: "unknown",
-      examples: [{ chinese: `${word}是个好词`, vietnamese: `${word} là một từ hay` }],
-      relatedWords: [],
-      source: 'llm', // marking as AI generated
-      completeness: 'complete',
-      fetchedAt: Date.now(),
-    };
-  } else {
-    try {
+    if (useMock) {
+      // 3. Mock External Provider (with delay)
+      await new Promise(resolve => setTimeout(resolve, 800));
+      apiResult = {
+        word,
+        pinyin: "mó nǐ",
+        meaning: `[Generated] Mock meaning for ${word}`,
+        partOfSpeech: "unknown",
+        examples: [{ chinese: `${word}是个好词`, vietnamese: `${word} là một từ hay` }],
+        relatedWords: [],
+        source: 'llm',
+        completeness: 'complete',
+        fetchedAt: Date.now(),
+      };
+    } else {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-      const response = await fetch(`${API_BASE_URL}/api/dictionary`, {
+      const data = await fetchJsonWithTimeout(`${API_BASE_URL}/api/dictionary`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word })
-      });
+      }, 10_000);
 
-      if (!response.ok) {
-        throw new Error(`Dictionary API error: ${response.status}`);
+      if (!isDictionaryResult(data) || data.word !== word) {
+        throw new Error('Dictionary API returned a malformed response');
       }
-      
-      const data = await response.json();
       apiResult = data;
-    } catch (e) {
-      console.error("External Dictionary API error", e);
-      throw e; // Throw to trigger failed state in UI
+    }
+
+    // 4. Save to Cache. A cache write failure must not discard a valid lookup.
+    try {
+      await db.dictionaryCache.put({ word, result: apiResult, cachedAt: Date.now() });
+    } catch (error) {
+      console.error('Dictionary cache write error', error);
+    }
+
+    return apiResult;
+  })();
+
+  inFlightExternalLookups.set(word, request);
+  try {
+    return await request;
+  } finally {
+    if (inFlightExternalLookups.get(word) === request) {
+      inFlightExternalLookups.delete(word);
     }
   }
-
-  // 4. Save to Cache
-  try {
-    await db.dictionaryCache.put({
-      word,
-      result: apiResult,
-      cachedAt: Date.now(),
-    });
-  } catch (e) {
-    console.error("Cache write error", e);
-  }
-
-  return apiResult;
 }
