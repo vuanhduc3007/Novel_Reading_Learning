@@ -1,3 +1,5 @@
+import { apiBaseUrl, useMockApi } from '../../config/apiConfig';
+
 export interface TranslationProvider {
   translate(text: string, signal?: AbortSignal): Promise<string>;
 }
@@ -51,10 +53,9 @@ export class MockTranslationProvider implements TranslationProvider {
 
 export class ApiTranslationProvider implements TranslationProvider {
   async translate(text: string, signal?: AbortSignal): Promise<string> {
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
     const request = timeoutSignal(signal, 10_000);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/translate`, {
+      const response = await fetch(`${apiBaseUrl}/api/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: request.signal,
@@ -75,9 +76,6 @@ export class ApiTranslationProvider implements TranslationProvider {
   }
 }
 
-// Development fallback to mock if API env is not set or explicitly says mock
-const useMock = import.meta.env.VITE_USE_MOCK_API === 'true' || import.meta.env.VITE_USE_MOCK_API === undefined;
-
-export const translationProvider = useMock 
+export const translationProvider = useMockApi
   ? new MockTranslationProvider() 
   : new ApiTranslationProvider();

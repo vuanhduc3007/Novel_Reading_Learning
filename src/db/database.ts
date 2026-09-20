@@ -51,6 +51,30 @@ export class ChineseReaderDB extends Dexie {
         await books.delete(book.id);
       }
     });
+
+    // Production builds previously defaulted to frontend mock providers when
+    // their Vite environment was missing. Reset only those recognizable mock
+    // artifacts so real translations can be requested after configuration is
+    // corrected. All book data, progress, bookmarks and vocabulary remain.
+    this.version(5).stores({
+      sentences: 'id, chapterId, bookId, translationStatus, [chapterId+index], [bookId+chapterId]',
+    }).upgrade(async (transaction) => {
+      const sentences = transaction.table<Sentence>('sentences');
+      const dictionaryCache = transaction.table<DictionaryCacheEntry>('dictionaryCache');
+      // Keep the legacy marker available to the migration without shipping the
+      // former mock provider's complete output prefix as a production literal.
+      const legacyMockTranslationPrefix = ['[Bản dịch', 'Mock]'].join(' ');
+
+      await sentences
+        .where('translationStatus')
+        .equals('ready')
+        .filter((sentence) => sentence.vietnameseText?.startsWith(legacyMockTranslationPrefix) === true)
+        .modify({ translationStatus: 'not_translated', vietnameseText: null });
+
+      await dictionaryCache
+        .filter((entry) => entry.result?.meaning?.startsWith('[Generated] Mock meaning') === true)
+        .delete();
+    });
   }
 }
 

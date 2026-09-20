@@ -1,4 +1,5 @@
 import { db } from '../../db/database';
+import { apiBaseUrl, useMockApi } from '../../config/apiConfig';
 import type { DictionaryLookupResult, DictionarySource, DictionaryCompleteness } from '../../types';
 
 // Minimal local dictionary for testing (based on test-book.txt)
@@ -79,15 +80,13 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
     return null; // Quick hover stops here
   }
 
-  const useMock = import.meta.env.VITE_USE_MOCK_API === 'true' || import.meta.env.VITE_USE_MOCK_API === undefined;
-
   const existingRequest = inFlightExternalLookups.get(word);
   if (existingRequest) return existingRequest;
 
   const request = (async (): Promise<DictionaryLookupResult> => {
     let apiResult: DictionaryLookupResult;
 
-    if (useMock) {
+    if (useMockApi) {
       // 3. Mock External Provider (with delay)
       await new Promise(resolve => setTimeout(resolve, 800));
       apiResult = {
@@ -102,8 +101,7 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
         fetchedAt: Date.now(),
       };
     } else {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-      const data = await fetchJsonWithTimeout(`${API_BASE_URL}/api/dictionary`, {
+      const data = await fetchJsonWithTimeout(`${apiBaseUrl}/api/dictionary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word })

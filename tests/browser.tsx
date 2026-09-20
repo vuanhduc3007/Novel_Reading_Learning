@@ -19,6 +19,7 @@ import { useDictionaryStore as dictionary } from '../src/stores/dictionaryStore'
 import { lookupWord } from '../src/features/dictionary/dictionaryService';
 import { translationQueue } from '../src/features/translation/translationQueue';
 import { translationProvider, ApiTranslationProvider } from '../src/features/translation/TranslationProvider';
+import { apiBaseUrl } from '../src/config/apiConfig';
 import { useAppStore } from '../src/stores/appStore';
 import '../src/styles/global.css';
 
@@ -128,6 +129,72 @@ async function interruptedImportMigration() {
   const vocabularyRow=await db.vocabularyItems.get('preserved-vocabulary');
   assert(vocabularyRow&&!vocabularyRow.sourceBookAvailable,'Vocabulary was removed or still points to a missing source');
   return {from:3,to:db.verno,readyBookPreserved:true,abandonedImportRemoved:true,partialRowsRemoved:true,vocabularyPreserved:true,vocabularyDetached:true};
+}
+
+async function mockProviderDataMigration() {
+  assert(!await Dexie.exists('ChineseReaderDB'),'Mock-data migration test requires a fresh origin');
+  const old = new Dexie('ChineseReaderDB');
+  old.version(4).stores({books:'id, importStatus, lastOpenedAt, createdAt', chapters:'id, bookId, [bookId+index]', sentences:'id, chapterId, bookId, [chapterId+index], [bookId+chapterId]', vocabularyItems:'id, sourceBookId, word, addedAt', bookmarks:'id, bookId, [bookId+chapterIndex], sentenceId, createdAt', dictionaryCache:'word, cachedAt'});
+  await old.open();
+
+  await old.table('books').add({id:'mock-migration-book',title:'Migration fixture',author:'test',coverUrl:null,sourceFormat:'epub',fileSizeBytes:1,importStatus:'ready_to_read',translationProgress:50,readingProgress:37,lastReadSentenceId:'real-sentence',lastReadChapterIndex:0,lastOpenedAt:123,createdAt:1,chapterCount:1});
+  await old.table('chapters').add({id:'mock-migration-chapter',bookId:'mock-migration-book',index:0,title:'Chapter',sentenceCount:2});
+  await old.table('sentences').bulkAdd([
+    {id:'mock-sentence',bookId:'mock-migration-book',chapterId:'mock-migration-chapter',index:0,chineseText:'模拟。',vietnameseText:'[Bản dịch Mock] 模拟。',translationStatus:'ready'},
+    {id:'real-sentence',bookId:'mock-migration-book',chapterId:'mock-migration-chapter',index:1,chineseText:'真实。',vietnameseText:'Bản dịch thật.',translationStatus:'ready'},
+  ]);
+  await old.table('bookmarks').add({id:'preserved-bookmark',bookId:'mock-migration-book',bookTitle:'Migration fixture',chapterId:'mock-migration-chapter',chapterTitle:'Chapter',chapterIndex:0,sentenceId:'real-sentence',previewText:'真实。',createdAt:2});
+  await old.table('vocabularyItems').add({id:'preserved-vocabulary',word:'真实',pinyin:'',meaning:'real',partOfSpeech:null,sourceBookId:'mock-migration-book',sourceBookTitle:'Migration fixture',sourceBookAvailable:true,sourceSentenceId:'real-sentence',isKnown:false,addedAt:3});
+  const resultBase={pinyin:'mó nǐ',partOfSpeech:'unknown',examples:[],relatedWords:[],source:'llm',completeness:'complete',fetchedAt:4};
+  await old.table('dictionaryCache').bulkAdd([
+    {word:'模拟',cachedAt:4,result:{...resultBase,word:'模拟',meaning:'[Generated] Mock meaning for 模拟'}},
+    {word:'真实',cachedAt:5,result:{...resultBase,word:'真实',meaning:'real cached meaning',source:'external'}},
+  ]);
+  old.close();
+
+  await db.open();
+  const mockSentence=await db.sentences.get('mock-sentence');
+  const realSentence=await db.sentences.get('real-sentence');
+  assert(mockSentence?.translationStatus==='not_translated'&&mockSentence.vietnameseText===null,'Mock sentence was not reset');
+  assert(realSentence?.translationStatus==='ready'&&realSentence.vietnameseText==='Bản dịch thật.','Real translation was changed');
+  assert(!await db.dictionaryCache.get('模拟'),'Frontend mock dictionary cache survived');
+  assert((await db.dictionaryCache.get('真实'))?.result.meaning==='real cached meaning','Real dictionary cache was changed');
+  const book=await db.books.get('mock-migration-book');
+  assert(book?.readingProgress===37&&book.lastReadSentenceId==='real-sentence','Book progress changed');
+  assert(await db.bookmarks.get('preserved-bookmark'),'Bookmark was removed');
+  assert(await db.vocabularyItems.get('preserved-vocabulary'),'Vocabulary was removed');
+  return {from:4,to:db.verno,mockSentenceReset:true,realTranslationPreserved:true,mockDictionaryCacheRemoved:true,realDictionaryCachePreserved:true,bookProgressPreserved:true,bookmarkPreserved:true,vocabularyPreserved:true};
+}
+
+async function productionTranslationRuntime() {
+  const originalFetch=window.fetch;
+  let bookId: string | undefined;
+  const requests: Array<{url:string;body:unknown}> = [];
+  try {
+    window.fetch=async (input,init) => {
+      const url=String(input);
+      requests.push({url,body:typeof init?.body==='string'?JSON.parse(init.body):init?.body});
+      return Response.json({translation:'Bản dịch tiếng Việt từ API'});
+    };
+    localStorage.setItem('reader-mode','bilingual');
+    bookId=await imported(new File(['制作说明。'],'production-translation.txt',{type:'text/plain'}));
+    const sentence=(await db.sentences.where('bookId').equals(bookId).toArray())[0]!;
+    await mount(`/reader/${bookId}`);
+    await ready(bookId);
+    await until(async()=> (await db.sentences.get(sentence.id))?.translationStatus==='ready','Reader did not finish API translation');
+    await until(()=>host.textContent?.includes('Bản dịch tiếng Việt từ API'),'Vietnamese translation did not render');
+    assert(requests.length===1,'Reader sent duplicate translation requests');
+    const request=requests[0];
+    assert(request,'Reader did not send a translation request');
+    assert(request.url===`${apiBaseUrl}/api/translate`,'Reader used the wrong translation URL');
+    assert((request.body as {text?:string})?.text==='制作说明。','Reader sent the wrong Chinese sentence');
+    assert(host.textContent?.includes('制作说明。'),'Chinese sentence disappeared after translation');
+    return {requestUrl:request.url,responseTranslation:'Bản dịch tiếng Việt từ API',chineseVisible:true,vietnameseVisible:true,requestCount:requests.length};
+  } finally {
+    window.fetch=originalFetch;
+    root?.unmount();root=undefined;
+    if(bookId) await remove(bookId);
+  }
 }
 
 async function realEpub() {
@@ -415,10 +482,13 @@ document.querySelector<HTMLButtonElement>('#run')!.onclick=async(event)=>{
   try {
     assert(['127.0.0.1','localhost'].includes(location.hostname),'Local only');
     const group=new URLSearchParams(location.search).get('suite');
-    assert(group==='api' ? import.meta.env.VITE_USE_MOCK_API==='false' : import.meta.env.VITE_USE_MOCK_API==='true','Use the documented mock/real test mode');
+    const usesRealApi=group==='api'||group==='production-translation';
+    assert(usesRealApi ? import.meta.env.VITE_USE_MOCK_API==='false' : import.meta.env.VITE_USE_MOCK_API==='true','Use the documented mock/real test mode');
     if(group==='api') await api();
+    else if(group==='production-translation') await test('Production translation runtime path',productionTranslationRuntime);
     else if(group==='migration') await test('v1 bookmark migration',migration);
     else if(group==='recovery') await test('Interrupted import migration',interruptedImportMigration);
+    else if(group==='mock-migration') await test('Mock provider data migration',mockProviderDataMigration);
     else if(group==='real') await test('Real EPUB pipeline',realEpub);
     else if(group==='large') await large();
     else if(group==='ui') await ui();
