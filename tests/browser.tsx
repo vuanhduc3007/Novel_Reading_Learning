@@ -21,6 +21,7 @@ import { translationQueue } from '../src/features/translation/translationQueue';
 import { translationProvider, ApiTranslationProvider } from '../src/features/translation/TranslationProvider';
 import { apiBaseUrl } from '../src/config/apiConfig';
 import { useAppStore } from '../src/stores/appStore';
+import { tokenize } from '../src/utils/tokenizer';
 import '../src/styles/global.css';
 
 const output = document.querySelector('#results')!;
@@ -534,14 +535,72 @@ async function liveDictionaryClick() {
   }
 }
 
+async function tokenizationRegression() {
+  await test('Tokenizer preserves text and meaningful Chinese boundaries', async () => {
+    const source = '制作说明，第一节：方源学习成为蛊师，踏入魔道并使用春秋蝉。EPUB 3.0';
+    const tokens = tokenize(source);
+    const words = tokens.filter(token => token.isWord).map(token => token.text);
+    assert(tokens.map(token => token.text).join('') === source, 'Tokenizer changed Reader text');
+    for (const expected of ['制作', '第一节', '方源', '学习', '蛊师', '魔道', '春秋蝉']) {
+      assert(words.includes(expected), `Reader token missing: ${expected}`);
+    }
+    assert(tokens.filter(token => !token.isWord).some(token => token.text.includes('EPUB 3.0')), 'Latin/number text became a dictionary target');
+    return { words, textPreserved: true };
+  });
+
+  await test('Segmented Reader hover/click/cache path', async () => {
+    const source = '方源开始学习制作蛊虫。';
+    const originalFetch = window.fetch;
+    let id: string | undefined;
+    let requests = 0;
+    try {
+      await db.dictionaryCache.delete('学习');
+      window.fetch = async (_input, init) => {
+        requests++;
+        const { word } = JSON.parse(String(init?.body));
+        return Response.json({word,pinyin:'xué xí',meaning:'học tập',partOfSpeech:null,examples:[],relatedWords:[],source:'external',completeness:'partial',fetchedAt:Date.now()});
+      };
+      localStorage.setItem('reader-mode', 'chinese_only');
+      id = await imported(new File([source], 'tokenization.txt', { type: 'text/plain' }));
+      await mount(`/reader/${id}`);
+      await ready(id);
+      const sentence = host.querySelector<HTMLElement>('[data-sentence-id]')!;
+      assert(sentence.querySelector('p')?.textContent === source, 'Rendered Reader text changed');
+      const token = [...sentence.querySelectorAll<HTMLElement>('span')].find(element => element.textContent === '学习');
+      assert(token, 'Meaningful Reader word is not a single token');
+
+      token.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await delay(250);
+      assert(requests === 0, 'Segmented hover called the backend');
+
+      token.click();
+      await until(() => dictionary.getState().panelState === 'complete', 'Segmented dictionary click did not settle');
+      assert(Number(requests) === 1 && dictionary.getState().panelResult?.word === '学习', 'Segmented click did not make one lookup');
+      dictionary.getState().closePanel();
+      token.click();
+      await until(() => dictionary.getState().panelState === 'complete', 'Cached segmented lookup did not settle');
+      assert(Number(requests) === 1, 'Cached segmented lookup called the backend again');
+      return { hoverRequests: 0, firstClickRequests: 1, cachedClickRequests: 0, textPreserved: true };
+    } finally {
+      window.fetch = originalFetch;
+      dictionary.getState().handleWordLeave();
+      dictionary.getState().closePanel();
+      reader.getState().cleanup();
+      if (id) await remove(id);
+      await db.dictionaryCache.delete('学习');
+    }
+  });
+}
+
 document.querySelector<HTMLButtonElement>('#run')!.onclick=async(event)=>{
   const button=event.currentTarget as HTMLButtonElement;button.disabled=true;
   try {
     assert(['127.0.0.1','localhost'].includes(location.hostname),'Local only');
     const group=new URLSearchParams(location.search).get('suite');
-    const usesRealApi=group==='api'||group==='production-translation'||group==='live-dictionary';
+    const usesRealApi=group==='api'||group==='production-translation'||group==='live-dictionary'||group==='tokenization';
     assert(usesRealApi ? import.meta.env.VITE_USE_MOCK_API==='false' : import.meta.env.VITE_USE_MOCK_API==='true','Use the documented mock/real test mode');
     if(group==='api') await api();
+    else if(group==='tokenization') await tokenizationRegression();
     else if(group==='live-dictionary') await test('Live Reader dictionary click',liveDictionaryClick);
     else if(group==='production-translation') await test('Production translation runtime path',productionTranslationRuntime);
     else if(group==='migration') await test('v1 bookmark migration',migration);

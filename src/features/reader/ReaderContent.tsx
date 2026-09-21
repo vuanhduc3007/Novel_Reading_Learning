@@ -124,8 +124,11 @@ export function ReaderContent() {
       }
     };
 
-    const animationFrame = requestAnimationFrame(attemptScroll);
-    return () => cancelAnimationFrame(animationFrame);
+    // Background tabs and embedded direct routes can suspend animation frames.
+    // A cancellable task still waits for the committed DOM without requiring
+    // the Reader tab to be visible before resume/bookmark jumps take effect.
+    const scrollTimer = setTimeout(attemptScroll, 0);
+    return () => clearTimeout(scrollTimer);
   }, [jumpTargetChapterIndex, jumpTargetSentenceId, chapterSentences, chapters, clearJumpTarget, setCurrentSentence]);
 
   // Debounced save of reading position
