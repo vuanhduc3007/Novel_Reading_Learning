@@ -10,8 +10,9 @@ services:
         value: production
       - key: TRANSLATION_PROVIDER
         value: google-free
+      - key: DICTIONARY_PROVIDER
+        value: mymemory
       - key: FRONTEND_URL
         value: https://your-netlify-site.netlify.app
-      # Do not put TRANSLATION_API_KEY or DICTIONARY_API_KEY here.
+      # Do not put provider credentials here.
       # Configure secrets securely in the Render dashboard.
-

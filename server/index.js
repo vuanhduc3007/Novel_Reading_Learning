@@ -27,6 +27,7 @@ app.use('/api/', limiter);
 
 // Import the provider adapter
 const { translateText } = require('./providers/translationProvider');
+const { lookupDictionaryWord } = require('./providers/dictionaryProvider');
 
 function isLanguageCode(value) {
   return typeof value === 'string' && /^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(value);
@@ -129,7 +130,7 @@ app.post('/api/translate', async (req, res) => {
 // Basic dictionary endpoint
 app.post('/api/dictionary', async (req, res) => {
   const reqStart = Date.now();
-  const provider = process.env.DICTIONARY_PROVIDER || 'mock';
+  const provider = process.env.DICTIONARY_PROVIDER || 'unconfigured';
   let chars = 0;
 
   try {
@@ -156,6 +157,42 @@ app.post('/api/dictionary', async (req, res) => {
         source: 'llm',
         completeness: 'complete',
         fetchedAt: Date.now()
+      });
+    }
+
+    if (provider === 'mymemory') {
+      try {
+        const result = await lookupDictionaryWord(word.trim());
+        const latency = Date.now() - reqStart;
+        logRequest('dictionary', provider, 200, latency, chars);
+        return res.json(result);
+      } catch (providerError) {
+        const latency = Date.now() - reqStart;
+
+        if (providerError.status === 404) {
+          logRequest('dictionary', provider, 404, latency, chars);
+          return res.status(404).json({ error: 'DICTIONARY_NOT_FOUND', message: 'Dictionary word not found' });
+        }
+        if (providerError.status === 429) {
+          logRequest('dictionary', provider, 429, latency, chars);
+          return res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', message: 'Provider rate limit exceeded' });
+        }
+        if (providerError.status === 504) {
+          logRequest('dictionary', provider, 504, latency, chars);
+          return res.status(504).json({ error: 'DICTIONARY_TIMEOUT', message: 'Provider timeout' });
+        }
+
+        logRequest('dictionary', provider, 502, latency, chars);
+        return res.status(502).json({ error: 'BAD_GATEWAY', message: 'Bad Gateway: Provider failed' });
+      }
+    }
+
+    if (provider === 'unconfigured') {
+      const latency = Date.now() - reqStart;
+      logRequest('dictionary', provider, 503, latency, chars);
+      return res.status(503).json({
+        error: 'DICTIONARY_NOT_CONFIGURED',
+        message: 'Dictionary provider is not configured',
       });
     }
 

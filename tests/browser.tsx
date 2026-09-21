@@ -163,7 +163,22 @@ async function mockProviderDataMigration() {
   assert(book?.readingProgress===37&&book.lastReadSentenceId==='real-sentence','Book progress changed');
   assert(await db.bookmarks.get('preserved-bookmark'),'Bookmark was removed');
   assert(await db.vocabularyItems.get('preserved-vocabulary'),'Vocabulary was removed');
-  return {from:4,to:db.verno,mockSentenceReset:true,realTranslationPreserved:true,mockDictionaryCacheRemoved:true,realDictionaryCachePreserved:true,bookProgressPreserved:true,bookmarkPreserved:true,vocabularyPreserved:true};
+
+  db.close();
+  await Dexie.delete('ChineseReaderDB');
+  const v5 = new Dexie('ChineseReaderDB');
+  v5.version(5).stores({books:'id, importStatus, lastOpenedAt, createdAt', chapters:'id, bookId, [bookId+index]', sentences:'id, chapterId, bookId, translationStatus, [chapterId+index], [bookId+chapterId]', vocabularyItems:'id, sourceBookId, word, addedAt', bookmarks:'id, bookId, [bookId+chapterIndex], sentenceId, createdAt', dictionaryCache:'word, cachedAt'});
+  await v5.open();
+  await v5.table('dictionaryCache').bulkAdd([
+    {word:'后端模拟',cachedAt:6,result:{...resultBase,word:'后端模拟',meaning:'[Backend Generated] Mock meaning for 后端模拟'}},
+    {word:'保留',cachedAt:7,result:{...resultBase,word:'保留',meaning:'giữ lại',source:'external'}},
+  ]);
+  v5.close();
+
+  await db.open();
+  assert(!await db.dictionaryCache.get('后端模拟'),'Backend mock dictionary cache survived');
+  assert((await db.dictionaryCache.get('保留'))?.result.meaning==='giữ lại','Real v5 dictionary cache was changed');
+  return {translationMigration:{from:4,to:5,mockSentenceReset:true,realTranslationPreserved:true,frontendMockDictionaryCacheRemoved:true,bookProgressPreserved:true,bookmarkPreserved:true,vocabularyPreserved:true},dictionaryMigration:{from:5,to:db.verno,backendMockDictionaryCacheRemoved:true,realDictionaryCachePreserved:true}};
 }
 
 async function productionTranslationRuntime() {
@@ -477,14 +492,57 @@ async function api() {
   } finally{window.fetch=original;dictionary.getState().handleWordLeave();dictionary.getState().closePanel();}
 }
 
+async function liveDictionaryClick() {
+  const id=await imported(await fixture(1));
+  const originalFetch=window.fetch;
+  const dictionaryRequests: string[]=[];
+  try {
+    await db.dictionaryCache.delete('制');
+    const sentence=(await db.sentences.where('bookId').equals(id).first())!;
+    await db.sentences.update(sentence.id,{chineseText:'制。'});
+    window.fetch=async(input,init)=>{
+      const url=typeof input==='string'?input:input instanceof URL?input.href:input.url;
+      if(url.includes('/api/dictionary')) dictionaryRequests.push(url);
+      return originalFetch(input,init);
+    };
+
+    localStorage.setItem('reader-mode','chinese_only');
+    await mount(`/reader/${id}`);
+    await ready(id);
+    const token=[...host.querySelectorAll<HTMLElement>('[data-sentence-id] span')].find(element=>element.textContent==='制');
+    assert(token,'Reader word token not found');
+    token.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
+    await delay(250);
+    assert(dictionaryRequests.length===0,'Reader hover called the backend');
+
+    token.click();
+    await until(()=>['complete','complete_ai','error','unavailable'].includes(dictionary.getState().panelState),'Dictionary click did not settle');
+    const state=dictionary.getState();
+    assert(state.panelState==='complete'&&state.panelResult?.word==='制','Reader click did not render the backend result');
+    assert(!state.panelResult.meaning?.includes('Mock meaning'),'Reader rendered a mock dictionary result');
+    assert(Number(dictionaryRequests.length)===1&&dictionaryRequests[0]===`${apiBaseUrl}/api/dictionary`,'Reader click used the wrong backend path');
+    const cached=await db.dictionaryCache.get('制');
+    assert(cached?.result.meaning===state.panelResult.meaning&&!cached.result.meaning?.includes('Mock meaning'),'Real result was not persisted safely');
+    return {hoverRequests:0,clickRequests:dictionaryRequests.length,requestUrl:dictionaryRequests[0],result:state.panelResult,cachePersisted:true};
+  } finally {
+    window.fetch=originalFetch;
+    dictionary.getState().handleWordLeave();
+    dictionary.getState().closePanel();
+    reader.getState().cleanup();
+    await remove(id);
+    await db.dictionaryCache.delete('制');
+  }
+}
+
 document.querySelector<HTMLButtonElement>('#run')!.onclick=async(event)=>{
   const button=event.currentTarget as HTMLButtonElement;button.disabled=true;
   try {
     assert(['127.0.0.1','localhost'].includes(location.hostname),'Local only');
     const group=new URLSearchParams(location.search).get('suite');
-    const usesRealApi=group==='api'||group==='production-translation';
+    const usesRealApi=group==='api'||group==='production-translation'||group==='live-dictionary';
     assert(usesRealApi ? import.meta.env.VITE_USE_MOCK_API==='false' : import.meta.env.VITE_USE_MOCK_API==='true','Use the documented mock/real test mode');
     if(group==='api') await api();
+    else if(group==='live-dictionary') await test('Live Reader dictionary click',liveDictionaryClick);
     else if(group==='production-translation') await test('Production translation runtime path',productionTranslationRuntime);
     else if(group==='migration') await test('v1 bookmark migration',migration);
     else if(group==='recovery') await test('Interrupted import migration',interruptedImportMigration);

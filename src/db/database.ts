@@ -75,6 +75,17 @@ export class ChineseReaderDB extends Dexie {
         .filter((entry) => entry.result?.meaning?.startsWith('[Generated] Mock meaning') === true)
         .delete();
     });
+
+    // The former backend dictionary mock was cached as a normal external
+    // result. Remove only that recognizable output so the first full lookup
+    // after enabling the real provider can refresh it. Other cache entries and
+    // all user data remain untouched.
+    this.version(6).upgrade(async (transaction) => {
+      const dictionaryCache = transaction.table<DictionaryCacheEntry>('dictionaryCache');
+      await dictionaryCache
+        .filter((entry) => entry.result?.meaning?.startsWith('[Backend Generated] Mock meaning') === true)
+        .delete();
+    });
   }
 }
 

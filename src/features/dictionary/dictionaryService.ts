@@ -22,13 +22,14 @@ const LOCAL_DICT: Record<string, Partial<DictionaryLookupResult>> = {
 // Export WORDS for the tokenizer to use
 export const LOCAL_WORDS = new Set(Object.keys(LOCAL_DICT));
 
-const inFlightExternalLookups = new Map<string, Promise<DictionaryLookupResult>>();
+const inFlightExternalLookups = new Map<string, Promise<DictionaryLookupResult | null>>();
 
 async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new DOMException('Dictionary request timed out', 'TimeoutError')), timeoutMs);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
+    if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Dictionary API error: ${response.status}`);
     return await response.json();
   } finally {
@@ -83,7 +84,7 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
   const existingRequest = inFlightExternalLookups.get(word);
   if (existingRequest) return existingRequest;
 
-  const request = (async (): Promise<DictionaryLookupResult> => {
+  const request = (async (): Promise<DictionaryLookupResult | null> => {
     let apiResult: DictionaryLookupResult;
 
     if (useMockApi) {
@@ -107,6 +108,7 @@ export async function lookupWord(word: string, allowExternal: boolean = false): 
         body: JSON.stringify({ word })
       }, 10_000);
 
+      if (data === null) return null;
       if (!isDictionaryResult(data) || data.word !== word) {
         throw new Error('Dictionary API returned a malformed response');
       }
