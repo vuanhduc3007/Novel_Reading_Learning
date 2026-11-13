@@ -65,7 +65,7 @@ async function requestEndpoint(endpoint, texts, sourceLanguage, targetLanguage) 
   let response;
   try {
     response = await axios.post(endpoint.url, body, {
-      params: { client: endpoint.client, sl: sourceLanguage, tl: targetLanguage },
+      params: { client: endpoint.client, sl: sourceLanguage, tl: targetLanguage, ie: 'UTF-8', oe: 'UTF-8' },
       timeout: PROVIDER_TIMEOUT_MS,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
     });
