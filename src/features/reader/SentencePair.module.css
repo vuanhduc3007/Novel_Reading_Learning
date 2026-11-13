@@ -3,7 +3,7 @@
 }
 
 .chinese {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: var(--reading-cn-size, 21px);
   line-height: var(--reading-cn-line-height, 1.9);
   color: var(--color-text-primary);

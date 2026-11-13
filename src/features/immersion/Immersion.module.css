@@ -44,7 +44,7 @@
 }
 
 .pendingText {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   cursor: pointer;
 }
 
@@ -62,7 +62,7 @@
 
 /* A Chinese word inside the Vietnamese text. */
 .woven {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: 1.12em;
   cursor: pointer;
   padding: 0 1px;
@@ -110,7 +110,7 @@
   border-left: 2px solid var(--color-accent);
   background-color: color-mix(in srgb, var(--color-accent) 5%, transparent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: var(--reading-cn-size, 21px);
   line-height: var(--reading-cn-line-height, 1.9);
   color: var(--color-text-primary);
@@ -142,7 +142,7 @@
 }
 
 .cardWord {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: 30px;
   line-height: 1.2;
 }
@@ -186,7 +186,7 @@
 }
 
 .cardCharHan {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: 18px;
 }
 

@@ -6,7 +6,8 @@
   width: 100%;
   margin: 0 auto;
   padding: calc(var(--reader-topbar-height) + var(--space-6)) var(--space-5) var(--space-8);
-  overflow-anchor: auto;
+  /* Anchoring is done in ReaderContent (Safari has no CSS scroll anchoring). */
+  overflow-anchor: none;
 }
 
 .chapterPlaceholder {

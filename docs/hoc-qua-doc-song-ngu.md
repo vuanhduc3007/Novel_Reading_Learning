@@ -63,6 +63,19 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
 - **Sách nhập bằng phiên bản cũ** không có thông tin đoạn văn. Khi ghép bản dịch, app ghép theo câu (vẫn đạt 2333/2344 chương), rồi **chia đoạn theo bản Việt**, nên không cần nhập lại sách.
 - Nếu sách chưa có bản dịch người, đầu trang đọc có banner "Chọn file bản dịch" để ghép ngay tại đó.
 
+### 3.5 Sửa lỗi "nhảy chương" và làm sạch bản dịch
+- **Nguyên nhân nhảy chương:** reader chỉ hiển thị chương hiện tại ±1, các chương khác là khoảng giữ chỗ có chiều cao ước tính. Có ba vấn đề cộng lại:
+  - Lúc một chương đang tải, khung xương tải chỉ cao vài trăm px, cả trang co lại.
+  - Chiều cao ước tính vẫn là 65px/câu của chế độ song ngữ, cao hơn thực tế nhiều ở chế độ "Việt + Hán".
+  - Bộ dò chương thấy khoảng trống ở đầu màn hình nên chuyển sang chương trước. Chương đó đang tải lại làm trang co tiếp, thế là chạy dây chuyền qua nhiều chương liền.
+- **Đã sửa:**
+  - Khung tải giữ đúng chiều cao dự kiến.
+  - Chiều cao ước tính tính theo trung bình đo được ở các chương đã hiển thị.
+  - Đổi chế độ, cỡ chữ, chiều rộng hay font thì xoá các chiều cao đã đo.
+  - Neo vị trí đọc bằng JS: giữ câu đang ở đầu màn hình đứng yên khi nội dung phía trên đổi chiều cao. Cách này chạy được cả trên Safari, vốn không hỗ trợ `overflow-anchor`.
+- **Bản dịch Cổ Chân Nhân** có khối quảng cáo cuối mỗi chương ("🔥 … Bấm nghe …", "▶️ Nghe Chương …", "(Nhớ bấm Đăng Ký Kênh YouTube …)"). Các khối này giờ bị loại khi ghép.
+- Bản dịch ghép bằng phiên bản cũ được đánh dấu `referenceVersion` < 2, và banner ở đầu trang đọc sẽ nhắc chọn lại file để ghép lại.
+
 ## 4. Lộ trình đề xuất (chưa làm), xếp theo hiệu quả / công sức
 
 1. *(Đã làm một phần ở mục 3.4: âm Hán-Việt trong thẻ từ.)* **Âm Hán-Việt cho từng chữ/từ** (dạng ruby hoặc tooltip). Đây là lợi thế lớn nhất của người Việt: rất nhiều từ văn chương và tiên hiệp có âm Hán-Việt quen thuộc, ví dụ 天罗地网 → *thiên la địa võng*, 春秋蝉 → *Xuân Thu Thiền*, 魔头 → *ma đầu*. Nguồn dữ liệu: trường `kVietnamese` của Unicode Unihan (giấy phép mở) cùng một từ điển Hán-Việt. Từ điển trong tooltip nên hiện cả âm Hán-Việt bên cạnh pinyin.

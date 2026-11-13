@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { db } from '../db/database';
-import type { Book, Chapter, Sentence, ReadingMode, ReadingSize } from '../types';
+import type { Book, Chapter, Sentence, ChineseFont, ContentWidth, ReadingMode, ReadingSize } from '../types';
 
 const READING_SIZES: Record<ReadingSize, { cnSize: number; cnLh: number; viSize: number; viLh: number }> = {
   S:   { cnSize: 17, cnLh: 1.9, viSize: 13, viLh: 1.6 },
@@ -29,6 +29,20 @@ function readStoredReadingSize(): ReadingSize {
   return READING_SIZE_KEYS.includes(value as ReadingSize) ? value as ReadingSize : 'L';
 }
 
+export const CONTENT_WIDTHS: Record<ContentWidth, number> = { narrow: 560, medium: 680, wide: 880 };
+
+function readStoredChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const value = typeof window === 'undefined' ? null : localStorage.getItem(key);
+    return allowed.includes(value as T) ? value as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const readStoredWidth = () => readStoredChoice<ContentWidth>('reader-width', ['narrow', 'medium', 'wide'], 'medium');
+const readStoredFont = () => readStoredChoice<ChineseFont>('reader-cn-font', ['serif', 'sans'], 'serif');
+
 function readStoredLineHeight(): number {
   const value = typeof window === 'undefined' ? null : Number(localStorage.getItem('reader-line-height'));
   return value === 1 || value === 1.2 || value === 1.5 ? value : 1;
@@ -41,6 +55,7 @@ interface ReaderState {
   bookAuthor: string;
   /** Title of the imported human translation, null when none. */
   referenceTitle: string | null;
+  referenceVersion: number;
   /** False for books imported before paragraph tracking. */
   hasParagraphs: boolean;
   chapters: Chapter[];    // chapter metadata list (no sentences)
@@ -70,6 +85,8 @@ interface ReaderState {
   readingSize: ReadingSize;
   readingSizeValues: { cnSize: number; cnLh: number; viSize: number; viLh: number };
   lineHeightMultiplier: number;
+  contentWidth: ContentWidth;
+  chineseFont: ChineseFont;
 
   // Scroll jump target (for chapter jumps from Contents)
   jumpTargetChapterIndex: number | null;
@@ -82,9 +99,13 @@ interface ReaderState {
   setCurrentChapter: (index: number) => void;
   setCurrentSentence: (sentenceId: string) => void;
   updateChapterHeight: (chapterId: string, height: number) => void;
+  /** Forget measured heights (layout settings changed), except for the given chapters. */
+  resetChapterHeights: (keepChapterIds: string[]) => void;
   setReadingMode: (mode: ReadingMode) => void;
   setReadingSize: (size: ReadingSize) => void;
   setLineHeightMultiplier: (mult: number) => void;
+  setContentWidth: (width: ContentWidth) => void;
+  setChineseFont: (font: ChineseFont) => void;
   toggleContents: () => void;
   toggleSettings: () => void;
   setTopBarVisible: (v: boolean) => void;
@@ -103,6 +124,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   bookTitle: '',
   bookAuthor: '',
   referenceTitle: null,
+  referenceVersion: 0,
   hasParagraphs: true,
   chapters: [],
   totalSentences: 0,
@@ -121,6 +143,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   readingSize: 'L',
   readingSizeValues: READING_SIZES['L'],
   lineHeightMultiplier: readStoredLineHeight(),
+  contentWidth: readStoredWidth(),
+  chineseFont: readStoredFont(),
   jumpTargetChapterIndex: null,
   jumpTargetSentenceId: null,
 
@@ -191,6 +215,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         bookTitle: book.title,
         bookAuthor: book.author,
         referenceTitle: book.referenceTitle ?? null,
+        referenceVersion: book.referenceVersion ?? 1,
         hasParagraphs: sample?.paragraphIndex !== undefined,
         chapters,
         totalSentences,
@@ -323,6 +348,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     });
   },
 
+  resetChapterHeights: (keepChapterIds) => {
+    set((s) => {
+      const kept: Record<string, number> = {};
+      for (const id of keepChapterIds) if (s.chapterHeights[id] !== undefined) kept[id] = s.chapterHeights[id]!;
+      return { chapterHeights: kept };
+    });
+  },
+
   setReadingMode: (mode) => {
     if (!READING_MODES.includes(mode)) return;
     set({ readingMode: mode });
@@ -333,6 +366,18 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     if (!READING_SIZE_KEYS.includes(size)) return;
     set({ readingSize: size, readingSizeValues: READING_SIZES[size] });
     localStorage.setItem('reader-size', size);
+  },
+
+  setContentWidth: (width) => {
+    if (!(width in CONTENT_WIDTHS)) return;
+    set({ contentWidth: width });
+    try { localStorage.setItem('reader-width', width); } catch { /* optional */ }
+  },
+
+  setChineseFont: (font) => {
+    if (font !== 'serif' && font !== 'sans') return;
+    set({ chineseFont: font });
+    try { localStorage.setItem('reader-cn-font', font); } catch { /* optional */ }
   },
 
   setLineHeightMultiplier: (mult) => {
@@ -431,6 +476,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     if (session !== readerSession || get().bookId !== bookId) return;
     set({
       referenceTitle: book?.referenceTitle ?? null,
+      referenceVersion: book?.referenceVersion ?? 1,
       hasParagraphs: sample?.paragraphIndex !== undefined,
       chapterSentences: { ...get().chapterSentences, ...reloaded },
     });

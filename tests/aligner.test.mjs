@@ -69,3 +69,22 @@ test('a chapter missing from the translation is rejected without shifting the st
   assert.equal(stream.position, 0);
   assert.ok(stream.alignChapter(present).accepted);
 });
+
+test('promotional and separator lines are not treated as translation', () => {
+  assert.equal(aligner.isNoiseParagraph('🔥 Mỏi mắt khi đọc đêm? Bấm nghe chính xác đoạn đang đọc'), true);
+  assert.equal(aligner.isNoiseParagraph('▶️ Nghe Chương 5 (Tập 1 • Phần 1 • từ 1:02:03) | ⏭️ Nghe tiếp'), true);
+  assert.equal(aligner.isNoiseParagraph('|'), true);
+  assert.equal(aligner.isNoiseParagraph('“Nó sẽ giết ngươi!”'), false);
+  assert.equal(aligner.isNoiseParagraph('……'), false);
+});
+
+test('the promotional block at the end of a translated chapter is removed', () => {
+  assert.deepEqual(aligner.stripChapterNoise([
+    'Đoạn một.',
+    'Đoạn hai.',
+    '🔥 Mỏi mắt khi đọc đêm? Bấm nghe chính xác đoạn đang đọc (Bản Audio Mới 2026):',
+    '▶️ Nghe Chương 9 (Tập 1 • Phần 4) | ⏭️ Nghe tiếp Chương 10',
+    '(Nhớ bấm Đăng Ký Kênh YouTube để ủng hộ tại hạ nhé!)',
+  ]), ['Đoạn một.', 'Đoạn hai.']);
+  assert.deepEqual(aligner.stripChapterNoise(['A.', 'B.']), ['A.', 'B.']);
+});

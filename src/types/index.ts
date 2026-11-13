@@ -35,6 +35,8 @@ export interface Book {
   chapterCount: number;
   /** Title of the imported human reference translation, if any. */
   referenceTitle?: string | null;
+  /** Alignment algorithm version the reference was imported with. */
+  referenceVersion?: number;
   /**
    * True when the book was imported without paragraph data and its sentences'
    * paragraph numbers were taken from an aligned reference translation.
@@ -158,6 +160,7 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  */
 export type ReadingMode = 'vietnamese_first' | 'bilingual' | 'chinese_only' | 'on_demand';
 export type ChineseFont = 'serif' | 'sans';
+export type ContentWidth = 'narrow' | 'medium' | 'wide';
 export type ReadingSize = 'S' | 'M' | 'L' | 'XL' | 'XXL';
 
 export interface ReaderSettings {

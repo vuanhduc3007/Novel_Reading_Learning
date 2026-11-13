@@ -2,13 +2,14 @@ import React from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useReaderStore } from '../../stores/readerStore';
 import type { ThemeMode, ReadingSize } from '../../types';
+import { FONTS, WIDTHS } from '../reader/ReaderSettingsPanel';
 import styles from './SettingsPage.module.css';
 
 const SIZES: ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 
 export function SettingsPage() {
   const { theme, setTheme } = useAppStore();
-  const { readingMode, setReadingMode, readingSize, setReadingSize, lineHeightMultiplier, setLineHeightMultiplier } = useReaderStore();
+  const { readingMode, setReadingMode, readingSize, setReadingSize, lineHeightMultiplier, setLineHeightMultiplier, contentWidth, setContentWidth, chineseFont, setChineseFont } = useReaderStore();
 
   return (
     <div className={styles.page}>
@@ -94,6 +95,33 @@ export function SettingsPage() {
                 className={`${styles.segmentedBtn} ${lineHeightMultiplier === 1.5 ? styles.active : ''}`}
                 onClick={() => setLineHeightMultiplier(1.5)}
               >1.5 (Lớn)</button>
+            </div>
+          </div>
+
+          <div className={styles.settingGroup}>
+            <div className={styles.settingLabel}>Chiều rộng nội dung</div>
+            <div className={styles.segmented}>
+              {WIDTHS.map(([value, label]) => (
+                <button
+                  key={value}
+                  className={`${styles.segmentedBtn} ${contentWidth === value ? styles.active : ''}`}
+                  onClick={() => setContentWidth(value)}
+                >{label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.settingGroup}>
+            <div className={styles.settingLabel}>Font chữ Hán</div>
+            <div className={styles.segmented}>
+              {FONTS.map(([value, label, family]) => (
+                <button
+                  key={value}
+                  className={`${styles.segmentedBtn} ${chineseFont === value ? styles.active : ''}`}
+                  onClick={() => setChineseFont(value)}
+                  style={{ fontFamily: family }}
+                >{label}</button>
+              ))}
             </div>
           </div>
         </section>

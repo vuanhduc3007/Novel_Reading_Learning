@@ -15,7 +15,7 @@
 }
 
 .title {
-  font-family: var(--font-chinese-serif);
+  font-family: var(--font-chinese-reading, var(--font-chinese-serif));
   font-size: var(--text-xl);
   font-weight: 600;
   color: var(--color-text-primary);

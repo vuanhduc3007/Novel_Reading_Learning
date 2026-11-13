@@ -11,8 +11,15 @@ import {
   isChineseHeading,
   isVietnameseHeading,
   normalizeBeads,
+  stripChapterNoise,
   unitFeatures,
 } from './aligner';
+
+/**
+ * Bump when alignment improves enough that existing imports should be redone.
+ * 2: promotional lines removed, interrupted-import paragraph fix.
+ */
+export const REFERENCE_VERSION = 2;
 
 export interface ReferenceImportProgress {
   percent: number;
@@ -122,9 +129,11 @@ export async function importReferenceTranslation(
   onProgress({ percent: 0, detail: 'Đang đọc file bản dịch…' });
   const parsed = await parseReferenceFile(file, onProgress);
   const viParagraphs = parsed.chapters
-    .flatMap(chapter => chapter.textContent.split(/\r?\n/))
-    .map(paragraph => paragraph.trim())
-    .filter(paragraph => paragraph && !isVietnameseHeading(paragraph));
+    .flatMap(chapter => stripChapterNoise(chapter.textContent
+      .split(/\r?\n/)
+      .map(paragraph => paragraph.trim())
+      .filter(Boolean)))
+    .filter(paragraph => !isVietnameseHeading(paragraph));
   if (viParagraphs.length === 0) throw new Error('Không tìm thấy nội dung trong file bản dịch');
 
   const chapters = await db.chapters.where('[bookId+index]').between([bookId, -Infinity], [bookId, Infinity]).toArray();
@@ -209,7 +218,7 @@ export async function importReferenceTranslation(
     }
   }
 
-  await db.books.update(bookId, { referenceTitle: parsed.title || file.name });
+  await db.books.update(bookId, { referenceTitle: parsed.title || file.name, referenceVersion: REFERENCE_VERSION });
   onProgress({ percent: 100, detail: 'Hoàn tất' });
   return {
     title: parsed.title || file.name,

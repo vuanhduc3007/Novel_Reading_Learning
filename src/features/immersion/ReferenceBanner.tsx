@@ -4,11 +4,11 @@ import { Button } from '../../components';
 import { useToast } from '../../components/Toast/ToastContext';
 import { useReaderStore } from '../../stores/readerStore';
 import { useImmersionStore } from '../../stores/immersionStore';
-import { importReferenceTranslation, type ReferenceImportProgress } from '../reference/referenceImport';
+import { importReferenceTranslation, REFERENCE_VERSION, type ReferenceImportProgress } from '../reference/referenceImport';
 import styles from './Immersion.module.css';
 
 function dismissKey(bookId: string) {
-  return `reference-banner-dismissed:${bookId}`;
+  return `reference-banner-dismissed:${bookId}:v${REFERENCE_VERSION}`;
 }
 
 function isDismissed(bookId: string): boolean {
@@ -23,6 +23,7 @@ function isDismissed(bookId: string): boolean {
 export function ReferenceBanner() {
   const bookId = useReaderStore(s => s.bookId);
   const referenceTitle = useReaderStore(s => s.referenceTitle);
+  const referenceVersion = useReaderStore(s => s.referenceVersion);
   const readingMode = useReaderStore(s => s.readingMode);
   const { showToast } = useToast();
   const input = useRef<HTMLInputElement>(null);
@@ -30,7 +31,9 @@ export function ReferenceBanner() {
   const [dismissed, setDismissed] = useState(() => (bookId ? isDismissed(bookId) : false));
 
   if (!bookId || readingMode === 'chinese_only') return null;
-  if (!progress && (referenceTitle || dismissed)) return null;
+  // An existing reference made by an older aligner is worth redoing.
+  const outdated = Boolean(referenceTitle) && referenceVersion < REFERENCE_VERSION;
+  if (!progress && (dismissed || (referenceTitle && !outdated))) return null;
 
   const onFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -69,11 +72,18 @@ export function ReferenceBanner() {
         </>
       ) : (
         <>
-          <p className={styles.bannerText}>
-            <strong>Đang dùng máy dịch.</strong> Nếu bạn có bản dịch tiếng Việt của truyện này (EPUB hoặc TXT),
-            chọn file để app ghép từng câu với bản gốc — đọc tự nhiên hơn nhiều, tên riêng và thuật ngữ đúng.
-            File chỉ lưu trong trình duyệt của bạn.
-          </p>
+          {outdated ? (
+            <p className={styles.bannerText}>
+              <strong>Có cách ghép bản dịch tốt hơn.</strong> Bản dịch "{referenceTitle}" được ghép bằng phiên bản cũ
+              (còn lẫn dòng quảng cáo, có thể lệch đoạn). Chọn lại file bản dịch để ghép lại.
+            </p>
+          ) : (
+            <p className={styles.bannerText}>
+              <strong>Đang dùng máy dịch.</strong> Nếu bạn có bản dịch tiếng Việt của truyện này (EPUB hoặc TXT),
+              chọn file để app ghép từng câu với bản gốc — đọc tự nhiên hơn nhiều, tên riêng và thuật ngữ đúng.
+              File chỉ lưu trong trình duyệt của bạn.
+            </p>
+          )}
           <div className={styles.bannerActions}>
             <Button size="sm" onClick={() => input.current?.click()}>
               <FileText size={14} /> Chọn file bản dịch

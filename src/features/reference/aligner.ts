@@ -172,6 +172,30 @@ export function isVietnameseHeading(paragraph: string): boolean {
 }
 
 /** Chinese chapter/volume headings that have no counterpart paragraph. */
+/**
+ * Lines that are not part of the translation: web-novel EPUBs often carry
+ * per-chapter promotions ("🔥 … Bấm nghe …", "▶️ Nghe Chương 5 …") or
+ * separator lines. Ellipsis-only lines (“……”) are real text and are kept.
+ */
+export function isNoiseParagraph(paragraph: string): boolean {
+  return /^\p{Extended_Pictographic}/u.test(paragraph) || /^[\s|│\-–—_=*~•·]+$/u.test(paragraph);
+}
+
+const PROMO_WORDS = /youtube|đăng ký kênh|subscribe/i;
+
+/**
+ * Paragraphs of one translated chapter without its promotional block. Such
+ * blocks sit at the end of a chapter and may continue with lines that do not
+ * start with an emoji ("(Nhớ bấm Đăng Ký Kênh YouTube …)"), so everything
+ * from a noise line near the end is dropped.
+ */
+export function stripChapterNoise(paragraphs: string[]): string[] {
+  const tailStart = Math.max(0, paragraphs.length - 6);
+  const blockStart = paragraphs.findIndex((paragraph, index) => index >= tailStart && isNoiseParagraph(paragraph));
+  const body = blockStart >= 0 ? paragraphs.slice(0, blockStart) : paragraphs;
+  return body.filter(paragraph => !isNoiseParagraph(paragraph) && !(paragraph.length < 200 && PROMO_WORDS.test(paragraph)));
+}
+
 export function isChineseHeading(paragraph: string, chapterTitle?: string): boolean {
   const text = paragraph.trim();
   if (chapterTitle && text === chapterTitle.trim()) return true;

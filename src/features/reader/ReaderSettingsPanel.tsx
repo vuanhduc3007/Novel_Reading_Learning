@@ -2,13 +2,18 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { useReaderStore } from '../../stores/readerStore';
 import { useImmersionStore, LEARNING_SIZES } from '../../stores/immersionStore';
-import type { ReadingMode, ReadingSize } from '../../types';
+import type { ChineseFont, ContentWidth, ReadingMode, ReadingSize } from '../../types';
 import styles from './ReaderSettingsPanel.module.css';
 
 const SIZES: ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
+export const WIDTHS: Array<[ContentWidth, string]> = [['narrow', 'Hẹp'], ['medium', 'Vừa'], ['wide', 'Rộng']];
+export const FONTS: Array<[ChineseFont, string, string]> = [
+  ['serif', '宋体 Có chân', 'var(--font-chinese-serif)'],
+  ['sans', '黑体 Không chân', 'var(--font-chinese-sans)'],
+];
 
 export const ReaderSettingsPanel: React.FC = () => {
-  const { isSettingsOpen, toggleSettings, readingMode, setReadingMode, readingSize, setReadingSize, lineHeightMultiplier, setLineHeightMultiplier } = useReaderStore();
+  const { isSettingsOpen, toggleSettings, readingMode, setReadingMode, readingSize, setReadingSize, lineHeightMultiplier, setLineHeightMultiplier, contentWidth, setContentWidth, chineseFont, setChineseFont } = useReaderStore();
 
   const learningSize = useImmersionStore(s => s.learningSize);
   const setLearningSize = useImmersionStore(s => s.setLearningSize);
@@ -120,19 +125,33 @@ export const ReaderSettingsPanel: React.FC = () => {
           </div>
 
           <div className={styles.section}>
-            <div className={styles.sectionLabel}>Chiều rộng nội dung <span className={styles.comingSoon}>(Sắp ra mắt)</span></div>
-            <div className={`${styles.segmented} ${styles.disabled}`}>
-              <button className={styles.segmentedBtn}>60%</button>
-              <button className={styles.segmentedBtn}>80%</button>
-              <button className={styles.segmentedBtn}>100%</button>
+            <div className={styles.sectionLabel}>Chiều rộng nội dung</div>
+            <div className={styles.segmented}>
+              {WIDTHS.map(([value, label]) => (
+                <button
+                  key={value}
+                  className={`${styles.segmentedBtn} ${contentWidth === value ? styles.active : ''}`}
+                  onClick={() => setContentWidth(value)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
-          
+
           <div className={styles.section}>
-            <div className={styles.sectionLabel}>Font chữ <span className={styles.comingSoon}>(Sắp ra mắt)</span></div>
-            <div className={`${styles.segmented} ${styles.disabled}`}>
-              <button className={styles.segmentedBtn}>Serif</button>
-              <button className={styles.segmentedBtn}>Sans</button>
+            <div className={styles.sectionLabel}>Font chữ Hán</div>
+            <div className={styles.segmented}>
+              {FONTS.map(([value, label, family]) => (
+                <button
+                  key={value}
+                  className={`${styles.segmentedBtn} ${chineseFont === value ? styles.active : ''}`}
+                  onClick={() => setChineseFont(value)}
+                  style={{ fontFamily: family }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
