@@ -41,9 +41,14 @@ export const ReaderSettingsPanel: React.FC = () => {
                 className={`${styles.segmentedBtn} ${readingMode === 'on_demand' ? styles.active : ''}`}
                 onClick={() => setReadingMode('on_demand')}
               >
-                Khi cần
+                Tự đọc trước
               </button>
             </div>
+            <p className={styles.modeHint}>
+              {readingMode === 'bilingual' && 'Luôn hiện bản dịch. Dễ đọc nhưng mắt sẽ tự nhảy sang tiếng Việt — học ít hơn bạn nghĩ.'}
+              {readingMode === 'chinese_only' && 'Chỉ tiếng Trung. Di chuột/chạm vào từ để tra nghĩa.'}
+              {readingMode === 'on_demand' && 'Đọc câu tiếng Trung trước, tự đoán nghĩa, rồi bấm vào dòng mờ để kiểm tra. Cách này giúp nhớ lâu nhất.'}
+            </p>
           </div>
 
           <div className={styles.section}>

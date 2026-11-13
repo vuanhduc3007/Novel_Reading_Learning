@@ -52,7 +52,7 @@ export function SettingsPage() {
               <button 
                 className={`${styles.segmentedBtn} ${readingMode === 'on_demand' ? styles.active : ''}`}
                 onClick={() => setReadingMode('on_demand')}
-              >Khi cần</button>
+              >Tự đọc trước</button>
             </div>
           </div>
 

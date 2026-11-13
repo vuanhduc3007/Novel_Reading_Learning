@@ -16,47 +16,72 @@ export function SentencePair({ sentence, readingMode }: SentencePairProps) {
   
   // Tokenize the Chinese text
   const tokens = useMemo(() => tokenize(sentence.chineseText), [sentence.chineseText]);
+
+  const retryLabel = () => {
+    if (sentence.translationErrorCode === 'APP_RATE_LIMIT' || sentence.translationErrorCode === 'RATE_LIMIT_EXCEEDED') {
+      return 'Tạm giới hạn — Thử lại';
+    }
+    if (sentence.translationErrorCode === 'TRANSLATION_TIMEOUT' || sentence.translationErrorCode === 'NETWORK_ERROR') {
+      return 'Kết nối chậm — Thử lại';
+    }
+    return 'Thử lại';
+  };
   
+  const hasReference = sentence.referenceText !== undefined && sentence.referenceText !== null;
+  // Human reference translation wins over machine translation.
+  const translationText = hasReference
+    ? sentence.referenceText
+    : sentence.translationStatus === 'ready' ? sentence.vietnameseText : null;
+
   const renderTranslation = () => {
     if (readingMode === 'chinese_only') return null;
-    
-    const { translationStatus, vietnameseText } = sentence;
-    
+    // An empty reference means the translator merged this sentence into the
+    // next one; its meaning is shown there.
+    if (hasReference && !translationText) return null;
+
+    if (translationText) {
+      const sourceClass = hasReference ? styles.reference : '';
+      if (readingMode === 'on_demand' && !showTranslation) {
+        return (
+          <button
+            type="button"
+            className={`${styles.vietnamese} ${styles.hidden} ${sourceClass}`}
+            onClick={() => setShowTranslation(true)}
+            aria-label="Hiện bản dịch"
+            title="Đọc và tự hiểu câu tiếng Trung trước, rồi bấm để kiểm tra"
+          >
+            {translationText}
+          </button>
+        );
+      }
+      return (
+        <p
+          className={`${styles.vietnamese} ${sourceClass}`}
+          onClick={readingMode === 'on_demand' ? () => setShowTranslation(false) : undefined}
+        >
+          {translationText}
+        </p>
+      );
+    }
+
+    const { translationStatus } = sentence;
+    if (translationStatus === 'translating') {
+      return <span className={styles.translating}>{sentence.translationRetryAt ? 'Đang chờ thử lại…' : 'Đang dịch…'}</span>;
+    }
+    if (translationStatus === 'failed') {
+      return (
+        <button className={styles.failed} onClick={() => translationQueue.retry(sentence)}>
+          <RotateCcw size={12} /> {retryLabel()}
+        </button>
+      );
+    }
     if (readingMode === 'on_demand') {
-      if (translationStatus === 'not_translated' || translationStatus === 'failed') {
-        return (
-          <button className={styles.onDemandToggle} onClick={() => translationQueue.enqueue(sentence)}>
-            <ChevronDown size={12} /> Xem bản dịch
-          </button>
-        );
-      }
-      if (translationStatus === 'translating') {
-        return <span className={styles.translating}>Đang dịch…</span>;
-      }
-      if (translationStatus === 'ready' && !showTranslation) {
-        return (
-          <button className={styles.onDemandToggle} onClick={() => setShowTranslation(true)}>
-            <ChevronDown size={12} /> Hiện bản dịch
-          </button>
-        );
-      }
-      // If ready and showTranslation === true, it will fall through to render vietnameseText below
-    } else if (readingMode === 'bilingual') {
-      if (translationStatus === 'not_translated') return null;
-      if (translationStatus === 'translating') return <span className={styles.translating}>Đang dịch…</span>;
-      if (translationStatus === 'failed') {
-        return (
-          <span className={styles.failed} onClick={() => translationQueue.enqueue(sentence)} style={{ cursor: 'pointer' }}>
-            <RotateCcw size={12} /> Thử lại
-          </span>
-        );
-      }
+      return (
+        <button className={styles.onDemandToggle} onClick={() => { setShowTranslation(true); translationQueue.enqueue(sentence); }}>
+          <ChevronDown size={12} /> Xem bản dịch
+        </button>
+      );
     }
-    
-    if (translationStatus === 'ready') {
-      return <p className={styles.vietnamese}>{vietnameseText}</p>;
-    }
-    
     return null;
   };
 

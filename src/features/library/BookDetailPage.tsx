@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, BookOpen, HardDrive, Bookmark, Languages, Trash2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BookOpen, HardDrive, Bookmark, Languages, Trash2, RefreshCw, FileText, X } from 'lucide-react';
 import { db } from '../../db/database';
 import { Button, ProgressBar, Badge, ConfirmDialog, Skeleton } from '../../components';
 import { useToast } from '../../components/Toast/ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { deleteBook } from './importEngine';
 import { ImportModal } from './ImportModal';
+import { importReferenceTranslation, removeReferenceTranslation, type ReferenceImportProgress } from '../reference/referenceImport';
 import type { Book } from '../../types';
 import styles from './BookDetailPage.module.css';
 
@@ -52,6 +53,8 @@ export const BookDetailPage: React.FC = () => {
   const { showToast } = useToast();
   const { openImportModal } = useLibraryStore();
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const referenceInput = useRef<HTMLInputElement>(null);
+  const [referenceProgress, setReferenceProgress] = useState<ReferenceImportProgress | null>(null);
 
   const book = useLiveQuery(
     async () => bookId ? (await db.books.get(bookId)) ?? null : null,
@@ -69,7 +72,14 @@ export const BookDetailPage: React.FC = () => {
   ) || 0;
 
   const translatedSentences = useLiveQuery(
-    () => bookId ? db.sentences.where('bookId').equals(bookId).and(s => s.translationStatus === 'ready').count() : 0,
+    () => bookId ? db.sentences.where('bookId').equals(bookId)
+      .and(s => s.translationStatus === 'ready' || (s.referenceText !== undefined && s.referenceText !== null)).count() : 0,
+    [bookId]
+  ) || 0;
+
+  const referenceSentences = useLiveQuery(
+    () => bookId ? db.sentences.where('bookId').equals(bookId)
+      .and(s => s.referenceText !== undefined && s.referenceText !== null).count() : 0,
     [bookId]
   ) || 0;
 
@@ -98,6 +108,32 @@ export const BookDetailPage: React.FC = () => {
       }
     }
     setIsDeleteModalOpen(false);
+  };
+
+  const handleReferenceFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !bookId) return;
+    setReferenceProgress({ percent: 0, detail: 'Đang bắt đầu…' });
+    try {
+      const summary = await importReferenceTranslation(bookId, file, setReferenceProgress);
+      showToast(
+        `Đã ghép bản dịch: ${summary.matchedChapters}/${summary.totalChapters} chương, ` +
+        `${summary.matchedSentences.toLocaleString('vi-VN')} câu` +
+        (summary.sentenceLevelOnly ? ' (nhập lại sách để ghép chính xác hơn theo đoạn)' : ''),
+        'success',
+      );
+    } catch (err: any) {
+      showToast(`Không ghép được bản dịch: ${err.message}`, 'error');
+    } finally {
+      setReferenceProgress(null);
+    }
+  };
+
+  const handleRemoveReference = async () => {
+    if (!bookId) return;
+    await removeReferenceTranslation(bookId);
+    showToast('Đã gỡ bản dịch tham khảo', 'success');
   };
 
   const handleReplace = () => {
@@ -184,6 +220,39 @@ export const BookDetailPage: React.FC = () => {
             <div className={styles.progressInfo}>{transPercent}% · {translatedSentences} / {totalSentences} câu</div>
           </div>
           
+          <div className={styles.section}>
+            <div className={styles.sectionLabel}>Bản dịch tham khảo (người dịch)</div>
+            {referenceProgress ? (
+              <>
+                <ProgressBar value={referenceProgress.percent} variant="labeled" />
+                <div className={styles.progressInfo}>{referenceProgress.detail}</div>
+              </>
+            ) : (
+              <div className={styles.progressInfo}>
+                {book.referenceTitle
+                  ? `${book.referenceTitle} · ${referenceSentences.toLocaleString('vi-VN')} câu đã ghép`
+                  : 'Nhập bản dịch tiếng Việt (EPUB/TXT) của cùng cuốn sách để dùng thay máy dịch: chính xác hơn, tên riêng nhất quán, không phải chờ mạng.'}
+              </div>
+            )}
+            <div className={styles.referenceActions}>
+              <input
+                ref={referenceInput}
+                type="file"
+                accept=".epub,.txt"
+                hidden
+                onChange={handleReferenceFile}
+              />
+              <Button variant="secondary" disabled={!!referenceProgress} onClick={() => referenceInput.current?.click()}>
+                <FileText size={16} /> {book.referenceTitle ? 'Ghép lại bản dịch' : 'Nhập bản dịch tham khảo'}
+              </Button>
+              {book.referenceTitle && !referenceProgress && (
+                <Button variant="ghost" onClick={handleRemoveReference}>
+                  <X size={16} /> Gỡ
+                </Button>
+              )}
+            </div>
+          </div>
+
           <div className={styles.stats}>
             <div className={styles.statItem}>
               <div className={styles.statValue}>{bookmarkCount}</div>

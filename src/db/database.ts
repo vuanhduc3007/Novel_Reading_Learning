@@ -83,7 +83,8 @@ export class ChineseReaderDB extends Dexie {
     this.version(6).upgrade(async (transaction) => {
       const dictionaryCache = transaction.table<DictionaryCacheEntry>('dictionaryCache');
       await dictionaryCache
-        .filter((entry) => entry.result?.meaning?.startsWith('[Backend Generated] Mock meaning') === true)
+        .filter((entry) => typeof entry.result?.meaning === 'string' &&
+          entry.result.meaning.startsWith('[Backend Generated] Mock meaning'))
         .delete();
     });
   }

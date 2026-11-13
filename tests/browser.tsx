@@ -17,8 +17,14 @@ import { useLibraryStore as library } from '../src/stores/libraryStore';
 import { useVocabularyStore as vocabulary } from '../src/stores/vocabularyStore';
 import { useDictionaryStore as dictionary } from '../src/stores/dictionaryStore';
 import { lookupWord } from '../src/features/dictionary/dictionaryService';
-import { translationQueue } from '../src/features/translation/translationQueue';
-import { translationProvider, ApiTranslationProvider } from '../src/features/translation/TranslationProvider';
+import { translationQueue, MAX_TRANSLATION_BATCH_ITEMS, MAX_TRANSLATION_BATCH_CHARACTERS } from '../src/features/translation/translationQueue';
+import {
+  translationProvider,
+  ApiTranslationProvider,
+  TranslationProviderError,
+  type TranslationBatchItem,
+  type TranslationBatchResult,
+} from '../src/features/translation/TranslationProvider';
 import { apiBaseUrl } from '../src/config/apiConfig';
 import { useAppStore } from '../src/stores/appStore';
 import { tokenize } from '../src/utils/tokenizer';
@@ -173,13 +179,16 @@ async function mockProviderDataMigration() {
   await v5.table('dictionaryCache').bulkAdd([
     {word:'后端模拟',cachedAt:6,result:{...resultBase,word:'后端模拟',meaning:'[Backend Generated] Mock meaning for 后端模拟'}},
     {word:'保留',cachedAt:7,result:{...resultBase,word:'保留',meaning:'giữ lại',source:'external'}},
+    {word:'损坏',cachedAt:8,result:{...resultBase,word:'损坏',meaning:42}},
   ]);
   v5.close();
 
   await db.open();
   assert(!await db.dictionaryCache.get('后端模拟'),'Backend mock dictionary cache survived');
   assert((await db.dictionaryCache.get('保留'))?.result.meaning==='giữ lại','Real v5 dictionary cache was changed');
-  return {translationMigration:{from:4,to:5,mockSentenceReset:true,realTranslationPreserved:true,frontendMockDictionaryCacheRemoved:true,bookProgressPreserved:true,bookmarkPreserved:true,vocabularyPreserved:true},dictionaryMigration:{from:5,to:db.verno,backendMockDictionaryCacheRemoved:true,realDictionaryCachePreserved:true}};
+  const malformedLegacy=await db.dictionaryCache.get('损坏') as unknown as {result?:{meaning?:unknown}}|undefined;
+  assert(malformedLegacy?.result?.meaning===42,'Malformed legacy cache crashed or was unexpectedly deleted');
+  return {translationMigration:{from:4,to:5,mockSentenceReset:true,realTranslationPreserved:true,frontendMockDictionaryCacheRemoved:true,bookProgressPreserved:true,bookmarkPreserved:true,vocabularyPreserved:true},dictionaryMigration:{from:5,to:db.verno,backendMockDictionaryCacheRemoved:true,realDictionaryCachePreserved:true,malformedLegacyRowHandled:true}};
 }
 
 async function productionTranslationRuntime() {
@@ -190,7 +199,8 @@ async function productionTranslationRuntime() {
     window.fetch=async (input,init) => {
       const url=String(input);
       requests.push({url,body:typeof init?.body==='string'?JSON.parse(init.body):init?.body});
-      return Response.json({translation:'Bản dịch tiếng Việt từ API'});
+      const body=requests.at(-1)?.body as {items?: TranslationBatchItem[]};
+      return Response.json({results:(body.items ?? []).map(item=>({id:item.id,status:'translated',translation:'Bản dịch tiếng Việt từ API'}))});
     };
     localStorage.setItem('reader-mode','bilingual');
     bookId=await imported(new File(['制作说明。'],'production-translation.txt',{type:'text/plain'}));
@@ -202,8 +212,8 @@ async function productionTranslationRuntime() {
     assert(requests.length===1,'Reader sent duplicate translation requests');
     const request=requests[0];
     assert(request,'Reader did not send a translation request');
-    assert(request.url===`${apiBaseUrl}/api/translate`,'Reader used the wrong translation URL');
-    assert((request.body as {text?:string})?.text==='制作说明。','Reader sent the wrong Chinese sentence');
+    assert(request.url===`${apiBaseUrl}/api/translate/batch`,'Reader used the wrong translation URL');
+    assert((request.body as {items?: TranslationBatchItem[]})?.items?.[0]?.text==='制作说明。','Reader sent the wrong Chinese sentence');
     assert(host.textContent?.includes('制作说明。'),'Chinese sentence disappeared after translation');
     return {requestUrl:request.url,responseTranslation:'Bản dịch tiếng Việt từ API',chineseVisible:true,vietnameseVisible:true,requestCount:requests.length};
   } finally {
@@ -312,30 +322,30 @@ async function suite() {
     assert(!await db.books.get(id),'Book remains'); const v=await db.vocabularyItems.where('sourceBookId').equals(id).first(); assert(v&&!v.sourceBookAvailable,'Vocabulary lost/not detached');
   });
   await test('Translation delete/replace races ignore abort-ignoring provider',async()=>{
-    const original=translationProvider.translate;
+    const original=translationProvider.translateBatch;
     try {
       for(const operation of ['delete','replace']) {
-        const raceId=await imported(await fixture(2)); let resolve!: (text:string)=>void;
-        translationProvider.translate=()=>new Promise(r=>{resolve=r;});
+        const raceId=await imported(await fixture(2)); let resolve!: (results:TranslationBatchResult[])=>void; let requested: TranslationBatchItem[]=[];
+        translationProvider.translateBatch=(items)=>{requested=items;return new Promise(r=>{resolve=r;});};
         const s=(await db.sentences.where('bookId').equals(raceId).first())!;
         translationQueue.enqueue(s); await until(()=>resolve,'Provider did not start');
         if(operation==='delete') await remove(raceId); else await replaceBook(raceId,await fixture(3));
-        resolve('Late result'); await delay(100); assert(!await db.sentences.get(s.id),'Old sentence resurrected');
+        resolve(requested.map(item=>({id:item.id,status:'translated',translation:'Late result'}))); await delay(100); assert(!await db.sentences.get(s.id),'Old sentence resurrected');
         const remaining=await db.sentences.where('bookId').equals(raceId).toArray(); assert(remaining.every(s=>s.vietnameseText===null),'Old translation contaminated replacement');
       }
-    } finally {translationProvider.translate=original;}
+    } finally {translationProvider.translateBatch=original;}
   });
   await test('Translation cached / duplicate / failure / interrupted recovery',async()=>{
-    const tid=await imported(await fixture(3)), sentences=await db.sentences.where('bookId').equals(tid).toArray(); const original=translationProvider.translate; let calls=0;
+    const tid=await imported(await fixture(3)), sentences=await db.sentences.where('bookId').equals(tid).toArray(); const original=translationProvider.translateBatch; let calls=0;
     try {
-      translationProvider.translate=async()=>{calls++;await delay(50);return 'Translation';};
+      translationProvider.translateBatch=async(items)=>{calls++;await delay(50);return items.map(item=>({id:item.id,status:'translated',translation:'Translation'}));};
       await db.sentences.update(sentences[0]!.id,{translationStatus:'ready',vietnameseText:'Cache'}); translationQueue.enqueue(sentences[0]!); await delay(100); assert(calls===0,'Cached sentence called provider');
       for(let i=0;i<5;i++)translationQueue.enqueue(sentences[1]!);
       await until(async()=>(await db.sentences.get(sentences[1]!.id))!.translationStatus==='ready','Not translated'); assert(Number(calls)===1,'Duplicate provider requests');
-      translationProvider.translate=async()=>{throw new Error('503');}; translationQueue.enqueue(sentences[2]!); await until(async()=>(await db.sentences.get(sentences[2]!.id))!.translationStatus==='failed','Failure not persisted');
-      await db.sentences.update(sentences[2]!.id,{translationStatus:'translating'});translationProvider.translate=async()=> 'Recovered';translationQueue.enqueue((await db.sentences.get(sentences[2]!.id))!);
+      translationProvider.translateBatch=async()=>{throw new TranslationProviderError('INVALID_PAYLOAD',400,false);}; translationQueue.enqueue(sentences[2]!); await until(async()=>(await db.sentences.get(sentences[2]!.id))!.translationStatus==='failed','Failure not persisted');
+      await db.sentences.update(sentences[2]!.id,{translationStatus:'translating'});translationProvider.translateBatch=async(items)=>items.map(item=>({id:item.id,status:'translated',translation:'Recovered'}));translationQueue.enqueue((await db.sentences.get(sentences[2]!.id))!);
       await until(async()=>(await db.sentences.get(sentences[2]!.id))!.translationStatus==='ready','Persisted translating sentence stuck after restart',1500);
-    } finally {translationProvider.translate=original;}
+    } finally {translationProvider.translateBatch=original;}
   });
   await test('Dictionary hover A-B-C zero network / click A-B-C latest wins',async()=>{
     const original=window.fetch; let requests=0;window.fetch=async()=>{requests++;throw new Error('External request forbidden');};
@@ -447,13 +457,175 @@ async function stateRaces() {
     await Promise.all([bookmark(id),bookmark(id)]);assert(await db.bookmarks.where('sentenceId').equals(s.id).count()===0,'Concurrent toggles inserted duplicate bookmarks');
   });
   await test('Translation concurrency never exceeds three',async()=>{
-    const original=translationProvider.translate;let active=0,maxActive=0,calls=0;
+    const original=translationProvider.translateBatch;let active=0,maxActive=0,calls=0,items=0;
     try{
-      translationProvider.translate=async()=>{calls++;active++;maxActive=Math.max(maxActive,active);await delay(30);active--;return 'Translation';};
+      translationProvider.translateBatch=async(batch)=>{calls++;items+=batch.length;active++;maxActive=Math.max(maxActive,active);await delay(30);active--;return batch.map(item=>({id:item.id,status:'translated',translation:'Translation'}));};
       const sentences=await db.sentences.where('bookId').equals(id).limit(12).toArray();sentences.forEach(sentence=>translationQueue.enqueue(sentence));
       await until(async()=> (await db.sentences.bulkGet(sentences.map(s=>s.id))).every(s=>s?.translationStatus==='ready'),'Queue not drained');
-      assert(maxActive===3&&calls===12,'Concurrency/dedup regression');return{maxActive,calls};
-    }finally{translationProvider.translate=original;reader.getState().cleanup();}
+      assert(maxActive<=3&&calls===2&&items===12,'Batch concurrency/dedup regression');return{maxActive,batches:calls,items};
+    }finally{translationProvider.translateBatch=original;reader.getState().cleanup();}
+  });
+}
+
+async function translationOptimizationRegression() {
+  const originalTranslateBatch=translationProvider.translateBatch;
+  localStorage.setItem('reader-mode','chinese_only');
+
+  await test('100-sentence queue batches by the item cap at concurrency three',async()=>{
+    const id=await imported(await fixture(100,100));
+    let active=0,maxActive=0,itemCount=0;
+    const batchSizes:number[]=[];
+    try {
+      translationQueue.resetMetrics();
+      translationProvider.translateBatch=async items=>{
+        batchSizes.push(items.length);itemCount+=items.length;active++;maxActive=Math.max(maxActive,active);
+        await delay(100);active--;
+        return items.map(item=>({id:item.id,status:'translated',translation:`vi:${item.id}`}));
+      };
+      const chapter=(await db.chapters.where('bookId').equals(id).first())!;
+      const sentences=await db.sentences.where('chapterId').equals(chapter.id).sortBy('index');
+      const started=performance.now();
+      translationQueue.syncReaderWindow({bookId:id,currentChapterId:chapter.id,current:sentences,nearEnd:false});
+      await until(async()=>(await db.sentences.where('bookId').equals(id).filter(sentence=>sentence.translationStatus!=='ready').count())===0,'100-sentence batch queue did not drain',10000);
+      const elapsedMs=Math.round(performance.now()-started);
+      const perSentenceEstimateMs=Math.ceil(100/3)*100;
+      assert(itemCount===100&&batchSizes.length===Math.ceil(100/MAX_TRANSLATION_BATCH_ITEMS)&&batchSizes.every(size=>size<=MAX_TRANSLATION_BATCH_ITEMS),'Queue did not pack full batches');
+      assert(maxActive===Math.min(3,batchSizes.length),'Queue did not use bounded concurrency');
+      assert(elapsedMs<perSentenceEstimateMs,'Batch queue was not faster than the equivalent per-sentence schedule');
+      return {sentences:itemCount,requests:batchSizes.length,batchSizes,maxActive,elapsedMs,simulatedPerSentenceMs:perSentenceEstimateMs};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;await remove(id);
+    }
+  });
+
+  await test('Dynamic batch packing honors the character cap',async()=>{
+    const id=await imported(await fixture(8,8));
+    const framedSizes:number[]=[];
+    try {
+      const chapter=(await db.chapters.where('bookId').equals(id).first())!;
+      const sentences=await db.sentences.where('chapterId').equals(chapter.id).sortBy('index');
+      for(const [index,sentence] of sentences.entries()) {
+        sentence.chineseText=`${'中'.repeat(700)}${index}。`;
+        await db.sentences.put(sentence);
+      }
+      translationProvider.translateBatch=async items=>{
+        framedSizes.push(items.reduce((sum,item)=>sum+item.text.length,0));
+        return items.map(item=>({id:item.id,status:'translated',translation:`vi:${item.id}`}));
+      };
+      translationQueue.syncReaderWindow({bookId:id,currentChapterId:chapter.id,current:sentences,nearEnd:false});
+      await until(async()=>(await db.sentences.where('bookId').equals(id).filter(sentence=>sentence.translationStatus!=='ready').count())===0,'Character-capped queue did not drain');
+      assert(framedSizes.length>1&&framedSizes.every(size=>size<=MAX_TRANSLATION_BATCH_CHARACTERS),'Frontend emitted an oversized batch');
+      return {requests:framedSizes.length,framedCharacters:framedSizes};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;await remove(id);
+    }
+  });
+
+  await test('Partial batch failure preserves successful items and order',async()=>{
+    const id=await imported(await fixture(3,3));
+    try {
+      const chapter=(await db.chapters.where('bookId').equals(id).first())!;
+      const sentences=await db.sentences.where('chapterId').equals(chapter.id).sortBy('index');
+      translationProvider.translateBatch=async items=>items.map((item,index)=>index===1
+        ? {id:item.id,status:'failed',error:{code:'INVALID_PROVIDER_ITEM',message:'isolated failure',retryable:false}}
+        : {id:item.id,status:'translated',translation:`ordered-${index}-${item.id}`});
+      translationQueue.syncReaderWindow({bookId:id,currentChapterId:chapter.id,current:sentences,nearEnd:false});
+      await until(async()=>{
+        const rows=await db.sentences.bulkGet(sentences.map(sentence=>sentence.id));
+        return rows.every(row=>row?.translationStatus==='ready'||row?.translationStatus==='failed');
+      },'Partial batch did not settle');
+      const rows=await db.sentences.bulkGet(sentences.map(sentence=>sentence.id));
+      assert(rows[0]?.translationStatus==='ready'&&rows[0].vietnameseText===`ordered-0-${sentences[0]!.id}`,'First batch result shifted');
+      assert(rows[1]?.translationStatus==='failed'&&!rows[1].vietnameseText,'Failed item corrupted persistence');
+      assert(rows[2]?.translationStatus==='ready'&&rows[2].vietnameseText===`ordered-2-${sentences[2]!.id}`,'Last batch result shifted');
+      return {statuses:rows.map(row=>row?.translationStatus),successfulItems:2,failedItems:1};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;await remove(id);
+    }
+  });
+
+  await test('Retry-After is honored, retry count is capped, and manual retry works',async()=>{
+    const id=await imported(await fixture(2,2));
+    try {
+      const sentences=await db.sentences.where('bookId').equals(id).sortBy('index');
+      const attemptTimes:number[]=[];
+      translationProvider.translateBatch=async items=>{
+        attemptTimes.push(performance.now());
+        if(attemptTimes.length===1) throw new TranslationProviderError('APP_RATE_LIMIT',429,true,40);
+        return items.map(item=>({id:item.id,status:'translated',translation:'retry-success'}));
+      };
+      translationQueue.enqueue(sentences[0]!);
+      await until(async()=>(await db.sentences.get(sentences[0]!.id))?.translationStatus==='ready','Retry-After item did not recover');
+      assert(attemptTimes.length===2&&attemptTimes[1]!-attemptTimes[0]!>=30,'Retry-After delay was ignored');
+
+      let cappedAttempts=0;
+      translationProvider.translateBatch=async()=>{cappedAttempts++;throw new TranslationProviderError('PROVIDER_UNAVAILABLE',503,true,1);};
+      translationQueue.enqueue(sentences[1]!);
+      await until(async()=>(await db.sentences.get(sentences[1]!.id))?.translationStatus==='failed','Retry cap did not settle',3000);
+      assert(cappedAttempts===4,'Retryable failure did not stop after four total attempts');
+
+      translationProvider.translateBatch=async items=>items.map(item=>({id:item.id,status:'translated',translation:'manual-success'}));
+      translationQueue.retry((await db.sentences.get(sentences[1]!.id))!);
+      await until(async()=>(await db.sentences.get(sentences[1]!.id))?.translationStatus==='ready','Manual retry did not recover');
+      return {retryAfterAttempts:attemptTimes.length,retryDelayMs:Math.round(attemptTimes[1]!-attemptTimes[0]!),cappedAttempts,manualRetry:true};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;await remove(id);
+    }
+  });
+
+  await test('Ready cache is skipped and navigation drops distant work',async()=>{
+    const id=await imported(await fixture(200,40));
+    const controllers:AbortSignal[]=[];
+    try {
+      const chapters=await db.chapters.where('bookId').equals(id).sortBy('index');
+      const byChapter=await Promise.all(chapters.map(chapter=>db.sentences.where('chapterId').equals(chapter.id).sortBy('index')));
+      await db.sentences.update(byChapter[3]![0]!.id,{translationStatus:'ready',vietnameseText:'cached'});
+      byChapter[3]![0]={...byChapter[3]![0]!,translationStatus:'ready',vietnameseText:'cached'};
+      translationProvider.translateBatch=(items,signal)=>new Promise((resolve,reject)=>{
+        if(signal) controllers.push(signal);
+        const abort=()=>reject(new DOMException('cancelled','AbortError'));
+        if(signal?.aborted) abort(); else signal?.addEventListener('abort',abort,{once:true});
+        void items;void resolve;
+      });
+      translationQueue.syncReaderWindow({bookId:id,currentChapterId:chapters[0]!.id,current:byChapter[0]!,next:{chapterId:chapters[1]!.id,sentences:byChapter[1]!},nearEnd:false});
+      await until(()=>translationQueue.getDebugState().active.length>0,'Initial chapter did not start');
+      translationQueue.syncReaderWindow({bookId:id,currentChapterId:chapters[3]!.id,current:byChapter[3]!,next:{chapterId:chapters[4]!.id,sentences:byChapter[4]!},previous:{chapterId:chapters[2]!.id,sentences:byChapter[2]!},nearEnd:false});
+      await until(()=>controllers.some(signal=>signal.aborted),'Distant active batch was not cancelled');
+      await delay(50);
+      const state=translationQueue.getDebugState();
+      const allowed=new Set([chapters[2]!.id,chapters[3]!.id,chapters[4]!.id]);
+      assert([...state.queued,...state.active].every(entry=>allowed.has(entry.chapterId!)),'Distant chapter remained queued/active after navigation');
+      assert(state.queued.every(entry=>entry.chapterId===chapters[3]!.id&&entry.priority===0),'New current chapter was not prioritized');
+      const cached=await db.sentences.get(byChapter[3]![0]!.id);
+      assert(cached?.translationStatus==='ready'&&cached.vietnameseText==='cached','Ready translation was scheduled or changed');
+      return {cancelledBatches:controllers.filter(signal=>signal.aborted).length,queuedCurrentOnly:true,readySkipped:true};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;await delay(30);await remove(id);
+    }
+  });
+
+  await test('Reader unmount aborts active translation without stale writes',async()=>{
+    const id=await imported(await fixture(20,20));
+    const signals:AbortSignal[]=[];
+    try {
+      localStorage.setItem('reader-mode','bilingual');
+      translationProvider.translateBatch=(items,signal)=>new Promise((resolve,reject)=>{
+        if(signal) signals.push(signal);
+        const abort=()=>reject(new DOMException('cancelled','AbortError'));
+        if(signal?.aborted) abort(); else signal?.addEventListener('abort',abort,{once:true});
+        void items;void resolve;
+      });
+      await mount(`/reader/${id}`);await ready(id);
+      await until(()=>signals.some(signal=>!signal.aborted),'Reader translation did not start');
+      navigate('/');
+      await until(()=>signals.every(signal=>signal.aborted),'Reader unmount did not abort all active batches');
+      await until(async()=>(await db.sentences.where('bookId').equals(id).filter(sentence=>sentence.translationStatus==='translating').count())===0,'Cancelled rows stayed translating');
+      const rows=await db.sentences.where('bookId').equals(id).toArray();
+      assert(rows.every(row=>row.translationStatus==='not_translated'&&!row.vietnameseText),'Unmount wrote or retained stale translations');
+      return {startedBatches:signals.length,allAborted:true,staleWrites:0};
+    } finally {
+      translationQueue.stopForReader(id);translationProvider.translateBatch=originalTranslateBatch;reader.getState().cleanup();root?.unmount();root=undefined;await delay(30);await remove(id);localStorage.setItem('reader-mode','chinese_only');
+    }
   });
 }
 
@@ -489,6 +661,14 @@ async function api() {
     });
     await test('API translation rejects blank successful response',async()=>{
       window.fetch=async()=>Response.json({translation:'  '});let rejected=false;try{await new ApiTranslationProvider().translate('你好');}catch{rejected=true;}assert(rejected,'Empty translation accepted as ready');
+    });
+    await test('API translation exposes structured Retry-After',async()=>{
+      window.fetch=async()=>new Response(JSON.stringify({error:'APP_RATE_LIMIT',message:'slow down'}),{status:429,headers:{'Content-Type':'application/json','Retry-After':'0.05'}});
+      let captured:unknown;
+      try{await new ApiTranslationProvider().translateBatch([{id:'retry-after',text:'你好'}]);}catch(error){captured=error;}
+      assert(captured instanceof TranslationProviderError,'429 did not produce a structured provider error');
+      assert(captured.code==='APP_RATE_LIMIT'&&captured.retryable&&captured.retryAfterMs===50,'Retry-After was not preserved');
+      return {code:captured.code,retryable:captured.retryable,retryAfterMs:captured.retryAfterMs};
     });
   } finally{window.fetch=original;dictionary.getState().handleWordLeave();dictionary.getState().closePanel();}
 }
@@ -610,6 +790,7 @@ document.querySelector<HTMLButtonElement>('#run')!.onclick=async(event)=>{
     else if(group==='large') await large();
     else if(group==='ui') await ui();
     else if(group==='races') await stateRaces();
+    else if(group==='translation-optimization') await translationOptimizationRegression();
     else await suite();
   } catch(error){log('Runner','FAIL',String(error));}
   finally {log('DONE','INFO',{tests:results.length});button.disabled=false;}

@@ -160,3 +160,10 @@
 @media (max-width: 767px) {
   .panel { width: 100%; }
 }
+
+.modeHint {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}

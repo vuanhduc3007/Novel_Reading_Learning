@@ -33,6 +33,8 @@ export interface Book {
   lastOpenedAt: number | null; // timestamp
   createdAt: number; // timestamp
   chapterCount: number;
+  /** Title of the imported human reference translation, if any. */
+  referenceTitle?: string | null;
 }
 
 // === Chapter ===
@@ -55,6 +57,16 @@ export interface Sentence {
   chineseText: string;
   vietnameseText: string | null;
   translationStatus: TranslationStatus;
+  translationErrorCode?: string | null;
+  translationRetryAt?: number | null;
+  /** Paragraph number inside the chapter (books imported after v1.1). */
+  paragraphIndex?: number;
+  /**
+   * Aligned human reference translation. `undefined`/`null`: none.
+   * Empty string: this sentence's meaning is carried by the next sentence's
+   * reference text (the translator merged several source sentences).
+   */
+  referenceText?: string | null;
 }
 
 // === Dictionary ===

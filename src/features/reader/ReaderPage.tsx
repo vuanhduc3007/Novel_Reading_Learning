@@ -12,6 +12,7 @@ import { DictionaryTooltip } from '../dictionary/DictionaryTooltip';
 import { DictionaryPanel } from '../dictionary/DictionaryPanel';
 import { Skeleton, ErrorBanner } from '../../components';
 import { useTranslationScheduler } from '../translation/useTranslationScheduler';
+import { translationQueue } from '../translation/translationQueue';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import styles from './ReaderPage.module.css';
 
@@ -44,6 +45,7 @@ export const ReaderPage: React.FC = () => {
       initializeReader(bookId);
     }
     return () => {
+      if (bookId) translationQueue.stopForReader(bookId);
       useDictionaryStore.getState().handleWordLeave();
       useDictionaryStore.getState().closePanel();
       cleanup();

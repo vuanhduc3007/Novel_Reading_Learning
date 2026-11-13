@@ -19,7 +19,9 @@ let readerSession = 0;
 
 function readStoredReadingMode(): ReadingMode {
   const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-mode');
-  return READING_MODES.includes(value as ReadingMode) ? value as ReadingMode : 'bilingual';
+  // New readers start in active mode: reading Chinese first and revealing the
+  // translation on demand is what actually builds reading skill.
+  return READING_MODES.includes(value as ReadingMode) ? value as ReadingMode : 'on_demand';
 }
 
 function readStoredReadingSize(): ReadingSize {

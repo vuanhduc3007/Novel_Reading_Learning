@@ -2,7 +2,7 @@ import { db } from '../../db/database';
 import { generateId } from '../../utils/id';
 import { parseEpub } from './epubParser';
 import { parseTxt } from './txtParser';
-import { splitChineseSentences } from './sentenceSplitter';
+import { splitChineseParagraphs } from './sentenceSplitter';
 import type { Book, Chapter, Sentence, SourceFormat, ImportStatus } from '../../types';
 import type { ParsedBookData } from './epubParser';
 import { translationQueue } from '../translation/translationQueue';
@@ -28,6 +28,26 @@ function detectFormat(file: File): SourceFormat {
     markdown: 'md',
   };
   return formatMap[ext] || 'txt';
+}
+
+/** Sentence rows for one chapter, keeping each sentence's paragraph number. */
+function toSentenceRecords(textContent: string, chapterId: string, bookId: string): Sentence[] {
+  const records: Sentence[] = [];
+  splitChineseParagraphs(textContent).forEach((paragraph, paragraphIndex) => {
+    for (const chineseText of paragraph) {
+      records.push({
+        id: generateId(),
+        chapterId,
+        bookId,
+        index: records.length,
+        paragraphIndex,
+        chineseText,
+        vietnameseText: null,
+        translationStatus: 'not_translated',
+      });
+    }
+  });
+  return records;
 }
 
 /**
@@ -98,7 +118,7 @@ export async function importBook(
     for (let i = 0; i < parsedData.chapters.length; i++) {
       const ch = parsedData.chapters[i]!;
       const chapterId = generateId();
-      const sentences = splitChineseSentences(ch.textContent);
+      const sentences = toSentenceRecords(ch.textContent, chapterId, bookId);
 
       chapterRecords.push({
         id: chapterId,
@@ -107,18 +127,7 @@ export async function importBook(
         title: ch.title,
         sentenceCount: sentences.length,
       });
-
-      for (let j = 0; j < sentences.length; j++) {
-        allSentences.push({
-          id: generateId(),
-          chapterId,
-          bookId,
-          index: j,
-          chineseText: sentences[j]!,
-          vietnameseText: null,
-          translationStatus: 'not_translated',
-        });
-      }
+      allSentences.push(...sentences);
 
       const percent = 40 + Math.round((i / parsedData.chapters.length) * 30);
       onProgress?.({
@@ -244,20 +253,13 @@ export async function replaceBook(
     for (let i = 0; i < parsedData.chapters.length; i++) {
       const ch = parsedData.chapters[i]!;
       const chapterId = generateId();
-      const sentences = splitChineseSentences(ch.textContent);
+      const sentences = toSentenceRecords(ch.textContent, chapterId, bookId);
 
       chapterRecords.push({
         id: chapterId, bookId, index: i,
         title: ch.title, sentenceCount: sentences.length,
       });
-
-      for (let j = 0; j < sentences.length; j++) {
-        allSentences.push({
-          id: generateId(), chapterId, bookId, index: j,
-          chineseText: sentences[j]!, vietnameseText: null,
-          translationStatus: 'not_translated',
-        });
-      }
+      allSentences.push(...sentences);
 
       const percent = 40 + Math.round((i / parsedData.chapters.length) * 30);
       onProgress?.({
@@ -301,6 +303,7 @@ export async function replaceBook(
         translationProgress: 0,
         lastReadSentenceId: null,
         lastReadChapterIndex: 0,
+        referenceTitle: null,
       });
     });
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });
