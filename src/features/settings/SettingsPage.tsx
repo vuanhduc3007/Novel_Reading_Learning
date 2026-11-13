@@ -42,6 +42,10 @@ export function SettingsPage() {
             <div className={styles.settingLabel}>Chế độ đọc</div>
             <div className={styles.segmented}>
               <button 
+                className={`${styles.segmentedBtn} ${readingMode === 'vietnamese_first' ? styles.active : ''}`}
+                onClick={() => setReadingMode('vietnamese_first')}
+              >Việt + Hán</button>
+              <button 
                 className={`${styles.segmentedBtn} ${readingMode === 'bilingual' ? styles.active : ''}`}
                 onClick={() => setReadingMode('bilingual')}
               >Song ngữ</button>

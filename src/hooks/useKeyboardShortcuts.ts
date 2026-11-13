@@ -25,9 +25,10 @@ export function useKeyboardShortcuts() {
           setTopBarVisible(!isTopBarVisible);
           break;
         case 'm':
-          if (readingMode === 'bilingual') setReadingMode('chinese_only');
-          else if (readingMode === 'chinese_only') setReadingMode('on_demand');
-          else setReadingMode('bilingual');
+          if (readingMode === 'vietnamese_first') setReadingMode('on_demand');
+          else if (readingMode === 'on_demand') setReadingMode('bilingual');
+          else if (readingMode === 'bilingual') setReadingMode('chinese_only');
+          else setReadingMode('vietnamese_first');
           break;
         case 'arrowright':
           if (currentChapterIndex < chapters.length - 1) {

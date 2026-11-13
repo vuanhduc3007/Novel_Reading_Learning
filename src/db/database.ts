@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Book, Chapter, Sentence, VocabularyItem, Bookmark, DictionaryCacheEntry, ImportStatus } from '../types';
+import type { Book, BookWordStats, Chapter, Sentence, VocabularyItem, Bookmark, DictionaryCacheEntry, ImportStatus, WordProgress } from '../types';
 
 export class ChineseReaderDB extends Dexie {
   books!: Table<Book>;
@@ -8,6 +8,8 @@ export class ChineseReaderDB extends Dexie {
   vocabularyItems!: Table<VocabularyItem>;
   bookmarks!: Table<Bookmark>;
   dictionaryCache!: Table<DictionaryCacheEntry>;
+  wordStats!: Table<BookWordStats>;
+  wordProgress!: Table<WordProgress>;
 
   constructor() {
     super('ChineseReaderDB');
@@ -86,6 +88,13 @@ export class ChineseReaderDB extends Dexie {
         .filter((entry) => typeof entry.result?.meaning === 'string' &&
           entry.result.meaning.startsWith('[Backend Generated] Mock meaning'))
         .delete();
+    });
+
+    // Vietnamese-first reading: per-book word frequencies and the learner's
+    // progress per Chinese word.
+    this.version(7).stores({
+      wordStats: 'bookId',
+      wordProgress: 'word, status',
     });
   }
 }

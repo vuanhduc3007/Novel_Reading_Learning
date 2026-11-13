@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { useReaderStore } from '../../stores/readerStore';
 import { ChapterBlock } from './ChapterBlock';
 import { Skeleton } from '../../components';
+import { ReferenceBanner } from '../immersion/ReferenceBanner';
 import styles from './ReaderContent.module.css';
 
 // Throttle utility (inline)
@@ -215,6 +216,7 @@ export function ReaderContent() {
       className={styles.scrollContainer}
       style={sizeStyle}
     >
+      <ReferenceBanner />
       {chapters.map((chapter, index) => {
         const isMounted = index >= mountedRange.start && index <= mountedRange.end;
         const sentences = chapterSentences[chapter.id];

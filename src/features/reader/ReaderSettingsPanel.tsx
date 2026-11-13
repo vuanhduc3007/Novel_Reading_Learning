@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { useReaderStore } from '../../stores/readerStore';
+import { useImmersionStore, LEARNING_SIZES } from '../../stores/immersionStore';
 import type { ReadingMode, ReadingSize } from '../../types';
 import styles from './ReaderSettingsPanel.module.css';
 
@@ -8,6 +9,12 @@ const SIZES: ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 
 export const ReaderSettingsPanel: React.FC = () => {
   const { isSettingsOpen, toggleSettings, readingMode, setReadingMode, readingSize, setReadingSize, lineHeightMultiplier, setLineHeightMultiplier } = useReaderStore();
+
+  const learningSize = useImmersionStore(s => s.learningSize);
+  const setLearningSize = useImmersionStore(s => s.setLearningSize);
+  const learningCount = useImmersionStore(s => s.learning.size);
+  const knownCount = useImmersionStore(s => s.known.size);
+  const statsBuilding = useImmersionStore(s => s.statsBuilding);
 
   if (!isSettingsOpen) return null;
 
@@ -25,6 +32,12 @@ export const ReaderSettingsPanel: React.FC = () => {
           <div className={styles.section}>
             <div className={styles.sectionLabel}>Chế độ hiển thị</div>
             <div className={styles.segmented}>
+              <button
+                className={`${styles.segmentedBtn} ${readingMode === 'vietnamese_first' ? styles.active : ''}`}
+                onClick={() => setReadingMode('vietnamese_first')}
+              >
+                Việt + Hán
+              </button>
               <button
                 className={`${styles.segmentedBtn} ${readingMode === 'bilingual' ? styles.active : ''}`}
                 onClick={() => setReadingMode('bilingual')}
@@ -45,11 +58,34 @@ export const ReaderSettingsPanel: React.FC = () => {
               </button>
             </div>
             <p className={styles.modeHint}>
+              {readingMode === 'vietnamese_first' && 'Đọc truyện bằng tiếng Việt. Một số từ hay gặp hiện bằng chữ Hán (có nghĩa ở trên); gặp đủ nhiều lần thì nghĩa được ẩn để bạn tự nhớ. Bấm vào chữ Hán để xem pinyin, âm Hán-Việt; bấm vào câu để xem câu gốc.'}
               {readingMode === 'bilingual' && 'Luôn hiện bản dịch. Dễ đọc nhưng mắt sẽ tự nhảy sang tiếng Việt — học ít hơn bạn nghĩ.'}
               {readingMode === 'chinese_only' && 'Chỉ tiếng Trung. Di chuột/chạm vào từ để tra nghĩa.'}
               {readingMode === 'on_demand' && 'Đọc câu tiếng Trung trước, tự đoán nghĩa, rồi bấm vào dòng mờ để kiểm tra. Cách này giúp nhớ lâu nhất.'}
             </p>
           </div>
+
+          {readingMode === 'vietnamese_first' && (
+            <div className={styles.section}>
+              <div className={styles.sectionLabel}>Số từ học cùng lúc</div>
+              <div className={styles.segmented}>
+                {LEARNING_SIZES.map(size => (
+                  <button
+                    key={size}
+                    className={`${styles.segmentedBtn} ${learningSize === size ? styles.active : ''}`}
+                    onClick={() => setLearningSize(size)}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+              <p className={styles.modeHint}>
+                {statsBuilding
+                  ? 'Đang thống kê từ trong sách…'
+                  : `Đang học ${learningCount} từ · đã thuộc ${knownCount} từ. Từ mới được chọn theo độ phổ biến trong truyện; khi bạn thuộc một từ, từ tiếp theo sẽ xuất hiện.`}
+              </p>
+            </div>
+          )}
 
           <div className={styles.section}>
             <div className={styles.sectionLabel}>Cỡ chữ</div>

@@ -10,6 +10,8 @@ import { ReaderProgressBar } from './ReaderProgressBar';
 import { ReaderSettingsPanel } from './ReaderSettingsPanel';
 import { DictionaryTooltip } from '../dictionary/DictionaryTooltip';
 import { DictionaryPanel } from '../dictionary/DictionaryPanel';
+import { WordCard } from '../immersion/WordCard';
+import { useImmersionStore } from '../../stores/immersionStore';
 import { Skeleton, ErrorBanner } from '../../components';
 import { useTranslationScheduler } from '../translation/useTranslationScheduler';
 import { translationQueue } from '../translation/translationQueue';
@@ -34,7 +36,14 @@ export const ReaderPage: React.FC = () => {
     jumpToLocation
   } = useReaderStore();
 
+  const readingMode = useReaderStore(s => s.readingMode);
   const { isVisible, show } = useAutoHide(3000);
+
+  // Vietnamese-first reading needs the Hán-Việt table and word statistics.
+  useEffect(() => {
+    if (bookId && !isLoading && readingMode === 'vietnamese_first') void useImmersionStore.getState().init(bookId);
+  }, [bookId, isLoading, readingMode]);
+  useEffect(() => () => useImmersionStore.getState().closeCard(), [bookId]);
 
   useEffect(() => {
     setTopBarVisible(isVisible);
@@ -108,6 +117,7 @@ export const ReaderPage: React.FC = () => {
       <ReaderSettingsPanel />
       <DictionaryTooltip />
       <DictionaryPanel />
+      <WordCard />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { useReaderStore } from '../../stores/readerStore';
 import { parseEpub, type ParsedBookData } from '../library/epubParser';
 import { parseTxt } from '../library/txtParser';
 import { splitVietnameseSentences } from '../library/sentenceSplitter';
+import { yieldToMain } from '../../utils/yieldToMain';
 import type { Chapter, Sentence } from '../../types';
 import {
   StreamingAligner,
@@ -33,7 +34,6 @@ interface ZhUnit {
   sentenceIndices: number[];
 }
 
-const yieldToBrowser = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 async function parseReferenceFile(file: File, onProgress: (p: ReferenceImportProgress) => void): Promise<ParsedBookData> {
   const extension = file.name.split('.').pop()?.toLowerCase();
@@ -92,6 +92,24 @@ export function distribute(zhSentences: string[], viText: string[], ratio: numbe
 }
 
 /**
+ * Paragraph numbers for a chapter of an older book (imported without them),
+ * taken from the Vietnamese paragraph each sentence was aligned to. Sentences
+ * without a match (headings) form their own paragraph.
+ */
+export function inferParagraphs(viParagraphOf: Array<number | undefined>): number[] {
+  const result: number[] = [];
+  let previousKey: string | null = null;
+  let current = -1;
+  viParagraphOf.forEach((paragraph, index) => {
+    const key = paragraph === undefined ? `own-${index}` : `vi-${paragraph}`;
+    if (key !== previousKey) current++;
+    previousKey = key;
+    result.push(current);
+  });
+  return result;
+}
+
+/**
  * Align a human Vietnamese translation (EPUB/TXT) with a book already in the
  * library and store it per sentence as `referenceText`. Chapters that cannot
  * be matched confidently keep using machine translation.
@@ -111,11 +129,24 @@ export async function importReferenceTranslation(
 
   const chapters = await db.chapters.where('[bookId+index]').between([bookId, -Infinity], [bookId, Infinity]).toArray();
   if (chapters.length === 0) throw new Error('Không tìm thấy sách cần ghép bản dịch');
+  const book = await db.books.get(bookId);
   const sample = await db.sentences.where('bookId').equals(bookId).first();
-  const byParagraph = sample?.paragraphIndex !== undefined;
+  // Paragraph numbers inferred by an earlier (possibly interrupted) run are
+  // not source paragraphs: such books keep aligning sentence by sentence.
+  const byParagraph = sample?.paragraphIndex !== undefined && !book?.paragraphsInferred;
+  if (!byParagraph && !book?.paragraphsInferred) await db.books.update(bookId, { paragraphsInferred: true });
 
-  // Older books have no paragraph numbers: align sentence streams instead.
-  const viUnits = byParagraph ? viParagraphs : viParagraphs.flatMap(splitVietnameseSentences);
+  // Older books have no paragraph numbers: align sentence streams instead,
+  // and remember which Vietnamese paragraph each sentence came from so the
+  // Chinese sentences can be grouped into the translator's paragraphs.
+  const viUnits: string[] = [];
+  const viUnitParagraph: number[] = [];
+  viParagraphs.forEach((paragraph, paragraphIndex) => {
+    for (const unit of byParagraph ? [paragraph] : splitVietnameseSentences(paragraph)) {
+      viUnits.push(unit);
+      viUnitParagraph.push(paragraphIndex);
+    }
+  });
   const aligner = new StreamingAligner(viUnits);
   onProgress({ percent: 10, detail: `Đã đọc ${viParagraphs.length.toLocaleString('vi-VN')} đoạn bản dịch` });
 
@@ -130,6 +161,7 @@ export async function importReferenceTranslation(
       .toArray();
     totalSentences += sentences.length;
     const references: Array<string | null> = sentences.map(() => null);
+    const viParagraphOf: Array<number | undefined> = sentences.map(() => undefined);
 
     const units = chineseUnits(chapter, sentences, byParagraph);
     const result = units.length > 0 ? aligner.alignChapter(units.map(unit => unit.text)) : null;
@@ -142,24 +174,30 @@ export async function importReferenceTranslation(
           group.vi.map(index => viUnits[index]!),
           aligner.ratio,
         );
+        const viParagraph = group.vi.length > 0 ? viUnitParagraph[group.vi[0]!] : undefined;
         sentenceIndices.forEach((sentenceIndex, position) => {
           references[sentenceIndex] = texts[position] ?? '';
+          viParagraphOf[sentenceIndex] = viParagraph;
         });
         matchedSentences += sentenceIndices.length;
       }
     }
 
+    const paragraphs = !byParagraph && result?.accepted ? inferParagraphs(viParagraphOf) : null;
     const changes = sentences
-      .map((sentence, index) => ({ sentence, referenceText: references[index] ?? null }))
-      .filter(({ sentence, referenceText }) => (sentence.referenceText ?? null) !== referenceText)
-      .map(({ sentence, referenceText }) => ({ key: sentence.id, changes: { referenceText } }));
+      .map((sentence, index) => {
+        const update: Partial<Sentence> = {};
+        const referenceText = references[index] ?? null;
+        if ((sentence.referenceText ?? null) !== referenceText) update.referenceText = referenceText;
+        if (paragraphs && sentence.paragraphIndex !== paragraphs[index]) update.paragraphIndex = paragraphs[index];
+        return { key: sentence.id, changes: update };
+      })
+      .filter(change => Object.keys(change.changes).length > 0);
     if (changes.length > 0) await db.sentences.bulkUpdate(changes);
 
     const reader = useReaderStore.getState();
     if (reader.bookId === bookId && reader.chapterSentences[chapter.id]) {
-      sentences.forEach((sentence, index) => {
-        reader.updateSentenceInStore(chapter.id, sentence.id, { referenceText: references[index] ?? null });
-      });
+      for (const change of changes) reader.updateSentenceInStore(chapter.id, change.key, change.changes);
     }
 
     if (chapterIndex % 20 === 0 || chapterIndex === chapters.length - 1) {
@@ -167,7 +205,7 @@ export async function importReferenceTranslation(
         percent: 10 + Math.round(((chapterIndex + 1) / chapters.length) * 88),
         detail: `Đang ghép chương ${chapterIndex + 1}/${chapters.length} — khớp ${matchedChapters} chương`,
       });
-      await yieldToBrowser();
+      await yieldToMain();
     }
   }
 

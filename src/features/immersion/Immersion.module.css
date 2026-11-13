@@ -1,0 +1,295 @@
+.chapter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.paragraph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Vietnamese is the main text here, so it gets the large reading size. */
+.text {
+  margin: 0;
+  font-family: var(--font-vietnamese);
+  font-size: calc(var(--reading-vi-size, 15px) * 1.2);
+  /* Extra room above each line for meaning hints over Chinese words. */
+  line-height: calc(var(--reading-vi-line-height, 1.6) * 1.25);
+  color: var(--color-text-primary);
+}
+
+.sentence {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.sentence:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+
+.selected {
+  background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* Machine translation: readable, but marked so it is not mistaken for the human text. */
+.machine {
+  color: var(--color-text-secondary);
+}
+
+.pending {
+  color: var(--color-text-tertiary);
+}
+
+.pendingText {
+  font-family: var(--font-chinese-serif);
+  cursor: pointer;
+}
+
+.retry {
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* A Chinese word inside the Vietnamese text. */
+.woven {
+  font-family: var(--font-chinese-serif);
+  font-size: 1.12em;
+  cursor: pointer;
+  padding: 0 1px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.learning {
+  color: var(--color-accent);
+  border-bottom: 1.5px dotted var(--color-accent);
+}
+
+.known {
+  color: var(--color-text-primary);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text-tertiary) 40%, transparent);
+}
+
+.woven:hover,
+.woven:focus-visible {
+  background-color: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  outline: none;
+}
+
+.withHint {
+  position: relative;
+}
+
+.withHint::after {
+  content: attr(data-hint);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 0.35em);
+  transform: translateX(-50%);
+  font-family: var(--font-vietnamese);
+  font-size: 0.5em;
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.original {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--font-chinese-serif);
+  font-size: var(--reading-cn-size, 21px);
+  line-height: var(--reading-cn-line-height, 1.9);
+  color: var(--color-text-primary);
+}
+
+.originalHighlight {
+  color: var(--color-accent);
+}
+
+/* === Word card === */
+.card {
+  position: fixed;
+  z-index: 60;
+  width: min(300px, calc(100vw - 16px));
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-vietnamese);
+  font-size: var(--text-base);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cardWord {
+  font-family: var(--font-chinese-serif);
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.iconButton {
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.iconButton:hover {
+  color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.cardClose {
+  margin-left: auto;
+}
+
+.cardPinyin {
+  color: var(--color-accent);
+  font-size: var(--text-md);
+  margin-top: 2px;
+}
+
+.cardChars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.cardChar {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cardCharHan {
+  font-family: var(--font-chinese-serif);
+  font-size: 18px;
+}
+
+.cardCharReading {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.cardMeaning {
+  margin-top: var(--space-3);
+}
+
+.cardLabel {
+  color: var(--color-text-tertiary);
+}
+
+.cardStatus {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.cardButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.cardButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.primary {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.primary:hover {
+  color: #fff;
+  opacity: 0.9;
+}
+
+/* === Banner for reference import / learning summary === */
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  font-family: var(--font-vietnamese);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.bannerText {
+  flex: 1 1 260px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.bannerActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.progressTrack {
+  flex-basis: 100%;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-border);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background-color: var(--color-accent);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.summary {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-vietnamese);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}

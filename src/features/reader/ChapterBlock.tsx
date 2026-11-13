@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { ChapterHeader } from './ChapterHeader';
 import { SentencePair } from './SentencePair';
+import { ImmersionChapter } from '../immersion/ImmersionChapter';
 import type { Chapter, Sentence, ReadingMode } from '../../types';
 import styles from './ChapterBlock.module.css';
 
@@ -60,15 +61,19 @@ export function ChapterBlock({ chapter, chapterIndex, sentences, readingMode, on
         index={chapterIndex}
         sentenceCount={sentences.length}
       />
-      <div className={styles.sentences}>
-        {sentences.map((sentence) => (
-          <SentencePair
-            key={sentence.id}
-            sentence={sentence}
-            readingMode={readingMode}
-          />
-        ))}
-      </div>
+      {readingMode === 'vietnamese_first' ? (
+        <ImmersionChapter sentences={sentences} />
+      ) : (
+        <div className={styles.sentences}>
+          {sentences.map((sentence) => (
+            <SentencePair
+              key={sentence.id}
+              sentence={sentence}
+              readingMode={readingMode}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

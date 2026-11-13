@@ -35,6 +35,11 @@ export interface Book {
   chapterCount: number;
   /** Title of the imported human reference translation, if any. */
   referenceTitle?: string | null;
+  /**
+   * True when the book was imported without paragraph data and its sentences'
+   * paragraph numbers were taken from an aligned reference translation.
+   */
+  paragraphsInferred?: boolean;
 }
 
 // === Chapter ===
@@ -92,6 +97,27 @@ export interface DictionaryCacheEntry {
   cachedAt: number; // timestamp
 }
 
+// === Immersion (Vietnamese-first reading) ===
+
+export type WordLearningStatus = 'learning' | 'known' | 'ignored';
+
+/** Learning state of one Chinese word in Vietnamese-first mode. */
+export interface WordProgress {
+  word: string;
+  status: WordLearningStatus;
+  /** Times the word was seen in Chinese while reading. Peeking lowers it. */
+  exposures: number;
+  updatedAt: number;
+}
+
+/** How often each matchable Chinese word occurs in a book, most frequent first. */
+export interface BookWordStats {
+  bookId: string;
+  /** [Chinese word, occurrences, most common Vietnamese rendering]. */
+  words: Array<[string, number, string]>;
+  builtAt: number;
+}
+
 // === Vocabulary ===
 
 export interface VocabularyItem {
@@ -125,7 +151,12 @@ export interface Bookmark {
 // === App Settings ===
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ReadingMode = 'bilingual' | 'chinese_only' | 'on_demand';
+/**
+ * - vietnamese_first: read the (human) Vietnamese translation; words being
+ *   learned appear in Chinese inside it, more of them over time.
+ * - on_demand: Chinese first, translation blurred until tapped.
+ */
+export type ReadingMode = 'vietnamese_first' | 'bilingual' | 'chinese_only' | 'on_demand';
 export type ChineseFont = 'serif' | 'sans';
 export type ReadingSize = 'S' | 'M' | 'L' | 'XL' | 'XXL';
 

@@ -304,6 +304,7 @@ export async function replaceBook(
         lastReadSentenceId: null,
         lastReadChapterIndex: 0,
         referenceTitle: null,
+        paragraphsInferred: false,
       });
     });
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });

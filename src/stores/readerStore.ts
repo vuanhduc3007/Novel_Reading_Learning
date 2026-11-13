@@ -10,7 +10,7 @@ const READING_SIZES: Record<ReadingSize, { cnSize: number; cnLh: number; viSize:
   XXL: { cnSize: 28, cnLh: 1.8, viSize: 19, viLh: 1.5 },
 };
 
-const READING_MODES: readonly ReadingMode[] = ['bilingual', 'chinese_only', 'on_demand'];
+const READING_MODES: readonly ReadingMode[] = ['vietnamese_first', 'bilingual', 'chinese_only', 'on_demand'];
 const READING_SIZE_KEYS: readonly ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 
 // A route change and React StrictMode can overlap IndexedDB reads. A monotonically
@@ -19,9 +19,9 @@ let readerSession = 0;
 
 function readStoredReadingMode(): ReadingMode {
   const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-mode');
-  // New readers start in active mode: reading Chinese first and revealing the
-  // translation on demand is what actually builds reading skill.
-  return READING_MODES.includes(value as ReadingMode) ? value as ReadingMode : 'on_demand';
+  // New readers start Vietnamese-first: they can enjoy the story at once and
+  // pick up Chinese words gradually, which suits beginners best.
+  return READING_MODES.includes(value as ReadingMode) ? value as ReadingMode : 'vietnamese_first';
 }
 
 function readStoredReadingSize(): ReadingSize {
@@ -39,6 +39,10 @@ interface ReaderState {
   bookId: string | null;
   bookTitle: string;
   bookAuthor: string;
+  /** Title of the imported human translation, null when none. */
+  referenceTitle: string | null;
+  /** False for books imported before paragraph tracking. */
+  hasParagraphs: boolean;
   chapters: Chapter[];    // chapter metadata list (no sentences)
   totalSentences: number;
   isLoading: boolean;
@@ -88,6 +92,8 @@ interface ReaderState {
   clearJumpTarget: () => void;
   saveReadingPosition: () => Promise<void>;
   updateSentenceInStore: (chapterId: string, sentenceId: string, updates: Partial<Sentence>) => void;
+  /** Re-read sentences and book metadata after a bulk change (reference import). */
+  reloadBookData: () => Promise<void>;
   cleanup: () => void;
 }
 
@@ -96,6 +102,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   bookId: null,
   bookTitle: '',
   bookAuthor: '',
+  referenceTitle: null,
+  hasParagraphs: true,
   chapters: [],
   totalSentences: 0,
   isLoading: true,
@@ -122,6 +130,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       bookId,
       bookTitle: '',
       bookAuthor: '',
+      referenceTitle: null,
+      hasParagraphs: true,
       chapters: [],
       totalSentences: 0,
       currentChapterIndex: 0,
@@ -166,6 +176,9 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         ? Math.min(Math.max(book.readingProgress, 0), 100)
         : 0;
 
+      const sample = await db.sentences.where('bookId').equals(bookId).first();
+      if (session !== readerSession) return;
+
       // Load reader settings from localStorage
       const readingMode = readStoredReadingMode();
       const readingSize = readStoredReadingSize();
@@ -177,6 +190,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       set({
         bookTitle: book.title,
         bookAuthor: book.author,
+        referenceTitle: book.referenceTitle ?? null,
+        hasParagraphs: sample?.paragraphIndex !== undefined,
         chapters,
         totalSentences,
         currentChapterIndex: startChapter,
@@ -397,6 +412,27 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
           [chapterId]: newSentences
         }
       };
+    });
+  },
+
+  reloadBookData: async () => {
+    const { bookId, chapterSentences } = get();
+    if (!bookId) return;
+    const session = readerSession;
+    const book = await db.books.get(bookId);
+    const sample = await db.sentences.where('bookId').equals(bookId).first();
+    const reloaded: Record<string, Sentence[]> = {};
+    for (const chapterId of Object.keys(chapterSentences)) {
+      reloaded[chapterId] = await db.sentences
+        .where('[chapterId+index]')
+        .between([chapterId, 0], [chapterId, Infinity])
+        .toArray();
+    }
+    if (session !== readerSession || get().bookId !== bookId) return;
+    set({
+      referenceTitle: book?.referenceTitle ?? null,
+      hasParagraphs: sample?.paragraphIndex !== undefined,
+      chapterSentences: { ...get().chapterSentences, ...reloaded },
     });
   },
 

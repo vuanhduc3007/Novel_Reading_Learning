@@ -43,9 +43,29 @@ Trang chi tiết sách → **"Nhập bản dịch tham khảo"** (EPUB/TXT).
 - Dấu đóng ngoặc `”` đi cùng câu của nó. Trước đây `“…痛快！` và `”“方老魔…` bị cắt sai, làm hỏng cả máy dịch lẫn việc ghép bản dịch.
 - Mỗi câu lưu thêm `paragraphIndex` để ghép bản dịch theo đoạn và để sau này hiển thị theo đoạn.
 
+### 3.4 Chế độ **"Việt + chữ Hán"** (mặc định mới, dành cho người mới học)
+Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc trước" quá sức. Chế độ này đảo ngược vai trò: **bản dịch tiếng Việt là văn bản chính**, và tiếng Trung được "cấy" dần vào nó (kỹ thuật *diglot weave*: đọc ngôn ngữ mẹ đẻ, các từ của ngôn ngữ mới thay vào dần dần).
+
+- **Từ nào được cấy:** app tìm trong từng cặp câu (gốc ↔ bản dịch) xem từ Trung nào tương ứng với cụm Việt nào:
+  - **Từ Hán-Việt** (chính xác nhất): mỗi chữ Hán phải khớp đúng âm Hán-Việt của âm tiết Việt ở cùng vị trí. Ví dụ 方源 ↔ "Phương Nguyên", 春秋蝉 ↔ "Xuân Thu Thiền", 天罗地网 ↔ "thiên la địa võng", 蛊师 ↔ "cổ sư". Người Việt học nhóm từ này dễ nhất: nghe đã quen, chỉ cần nhận mặt chữ.
+  - **Từ thuần Việt hay gặp:** 你 ↔ "ngươi", 他 ↔ "hắn", 杀 ↔ "giết"… lấy từ một danh sách nhỏ. Mỗi mục đã được kiểm chứng trên cả bộ truyện.
+- **Thứ tự học:** theo độ phổ biến trong chính cuốn sách. Từ gặp nhiều nhất học trước (方源, 他, 这, 是, 我, 蛊师…), nên mỗi từ được gặp lại hàng trăm lần một cách tự nhiên.
+- **Mỗi lần chỉ học vài từ** (5/10/20/40, mặc định 10). Khi thuộc một từ, từ tiếp theo xuất hiện. Văn bản cứ thế "Trung hoá" dần theo tốc độ của người đọc.
+- **Từ có ba mức hiển thị:**
+  1. Từ mới: chữ Hán, nghĩa tiếng Việt nhỏ ở trên.
+  2. Sau 8 lần gặp: chỉ còn chữ Hán, người đọc phải tự nhớ nghĩa (luyện nhớ lại). Nếu phải bấm xem nghĩa thì từ lùi lại vài bước, nghĩa sẽ hiện thêm một thời gian.
+  3. Đã thuộc (người đọc bấm "Đã nhớ", hoặc tự động sau 40 lần gặp): luôn hiện chữ Hán.
+- **Bấm vào chữ Hán** mở thẻ từ: pinyin, nghe phát âm (giọng đọc của trình duyệt), âm Hán-Việt từng chữ, nghĩa trong câu, các nút Đã nhớ / Từ điển / Bỏ qua.
+- **Bấm vào một câu** để xem câu gốc tiếng Trung ngay bên dưới, với các từ đang học được tô màu. Mỗi từ trong câu gốc vẫn tra được bằng từ điển.
+- **Dữ liệu Hán-Việt** (`src/data/hanviet.json`, khoảng 140 KB, chỉ tải khi cần) được dựng bằng `scripts/build-hanviet.mjs`:
+  - Nguồn chính: trường `kVietnamese` của Unicode Unihan, có chuyển âm từ chữ phồn thể sang chữ giản thể.
+  - Unihan thiếu nhiều âm, ví dụ 源 chỉ có "nguồn", 春 không có âm nào. Script học thêm từ các cặp câu đã căn chỉnh: nếu các chữ còn lại của một từ đã khớp âm, âm tiết ở vị trí còn lại là âm của chữ đó. Âm chỉ được nhận khi xuất hiện trong ít nhất hai từ khác nhau. Kết quả học thêm được 393 âm.
+- **Sách nhập bằng phiên bản cũ** không có thông tin đoạn văn. Khi ghép bản dịch, app ghép theo câu (vẫn đạt 2333/2344 chương), rồi **chia đoạn theo bản Việt**, nên không cần nhập lại sách.
+- Nếu sách chưa có bản dịch người, đầu trang đọc có banner "Chọn file bản dịch" để ghép ngay tại đó.
+
 ## 4. Lộ trình đề xuất (chưa làm), xếp theo hiệu quả / công sức
 
-1. **Âm Hán-Việt cho từng chữ/từ** (dạng ruby hoặc tooltip). Đây là lợi thế lớn nhất của người Việt: rất nhiều từ văn chương và tiên hiệp có âm Hán-Việt quen thuộc, ví dụ 天罗地网 → *thiên la địa võng*, 春秋蝉 → *Xuân Thu Thiền*, 魔头 → *ma đầu*. Nguồn dữ liệu: trường `kVietnamese` của Unicode Unihan (giấy phép mở) cùng một từ điển Hán-Việt. Từ điển trong tooltip nên hiện cả âm Hán-Việt bên cạnh pinyin.
+1. *(Đã làm một phần ở mục 3.4: âm Hán-Việt trong thẻ từ.)* **Âm Hán-Việt cho từng chữ/từ** (dạng ruby hoặc tooltip). Đây là lợi thế lớn nhất của người Việt: rất nhiều từ văn chương và tiên hiệp có âm Hán-Việt quen thuộc, ví dụ 天罗地网 → *thiên la địa võng*, 春秋蝉 → *Xuân Thu Thiền*, 魔头 → *ma đầu*. Nguồn dữ liệu: trường `kVietnamese` của Unicode Unihan (giấy phép mở) cùng một từ điển Hán-Việt. Từ điển trong tooltip nên hiện cả âm Hán-Việt bên cạnh pinyin.
 2. **Theo dõi từ đã biết** (đánh dấu "đã biết" ngay trong tooltip; mặc định coi các từ HSK 1–3 là đã biết). Tô nhẹ những từ chưa biết, và hiển thị "chương này bạn biết 93% số từ" để người học chọn đoạn vừa sức (mục tiêu 95–98%).
 3. **Gloss chọn lọc**: chỉ chú nghĩa trên những từ hiếm hoặc chưa biết, không dịch cả câu. Đọc càng nhiều thì gloss càng ít đi.
 4. **Ôn tập ngắt quãng (SRS)** cho trang Từ vựng, mỗi thẻ kèm câu ngữ cảnh lấy từ sách. Nếu có bản dịch người thì dùng câu đó làm mặt sau của thẻ.
