@@ -33,6 +33,11 @@ export interface AlignOptions {
   variance?: number;
   /** Allow the alignment to stop before the end of the Vietnamese units. */
   freeEnd?: boolean;
+  /**
+   * Allow skipping up to this many leading Vietnamese units (front matter,
+   * translator notes) instead of forcing them into the first match.
+   */
+  skipStart?: number;
 }
 
 export interface AlignResult {
@@ -58,6 +63,8 @@ const OPS: readonly Op[] = [
 ];
 
 const QUOTE_RE = /^[“"「『‘']/u;
+/** Cost of leaving one leading Vietnamese unit unmatched (cheaper than a 0–1 bead). */
+const SKIP_START_COST = 1.5;
 
 export function unitFeatures(text: string): AlignUnitFeatures {
   const trimmed = text.trim();
@@ -88,6 +95,11 @@ export function alignUnits(zh: AlignUnitFeatures[], vi: AlignUnitFeatures[], opt
   const cost = new Float64Array((n + 1) * width).fill(Infinity);
   const back = new Uint8Array((n + 1) * width).fill(255);
   cost[0] = 0;
+  const SKIPPED = 254;
+  for (let j = 1; j <= Math.min(options.skipStart ?? 0, m); j++) {
+    cost[j] = j * SKIP_START_COST;
+    back[j] = SKIPPED;
+  }
 
   for (let i = 0; i <= n; i++) {
     for (let j = 0; j <= m; j++) {
@@ -134,7 +146,7 @@ export function alignUnits(zh: AlignUnitFeatures[], vi: AlignUnitFeatures[], opt
   let j = end;
   while (i > 0 || j > 0) {
     const opIndex = back[i * width + j]!;
-    if (opIndex === 255) break;
+    if (opIndex === 255 || opIndex === SKIPPED) break;
     const [dz, dv] = OPS[opIndex]!;
     const bead: AlignBead = { zh: [], vi: [] };
     for (let k = i - dz; k < i; k++) bead.zh.push(k);
@@ -178,7 +190,11 @@ export function isVietnameseHeading(paragraph: string): boolean {
  * separator lines. Ellipsis-only lines (“……”) are real text and are kept.
  */
 export function isNoiseParagraph(paragraph: string): boolean {
-  return /^\p{Extended_Pictographic}/u.test(paragraph) || /^[\s|│\-–—_=*~•·]+$/u.test(paragraph);
+  return /^\p{Extended_Pictographic}/u.test(paragraph)
+    || /^[\s|│\-–—_=*~•·★☆✦✧◆◇●○※]+$/u.test(paragraph)
+    // Edition metadata: "Tác giả: …", "Thể loại: …", "Biên tập & Hiệu đính: …".
+    || (paragraph.length < 200
+      && /^(tác giả|thể loại|biên tập|hiệu đính|dịch giả|người dịch|converter|editor)(?=[\s&:：])[^:：]{0,30}[:：]/iu.test(paragraph));
 }
 
 const PROMO_WORDS = /youtube|đăng ký kênh|subscribe/i;
@@ -214,13 +230,46 @@ export interface StreamChapterResult {
  * Rejected chapters (prefaces, author notes, missing chapters) do not move the
  * stream pointer, so one bad chapter cannot shift the rest of the book.
  */
+/** A resync may move at most this share of the stream (or MIN_RESYNC_WINDOW units). */
+const RESYNC_WINDOW_SHARE = 0.02;
+const MIN_RESYNC_WINDOW = 400;
+/** Chapters shorter than this are never placed by resync. */
+const MIN_RESYNC_UNITS = 8;
+/** Chapters shorter than this are left to machine translation. */
+const MIN_CHAPTER_UNITS = 3;
+const MIN_CHAPTER_CHARS = 150;
+/** Leading Vietnamese units a chapter may leave unmatched (notes, front matter). */
+const SKIP_START_UNITS = 12;
+
+/**
+ * Content check for a proposed chapter alignment: how strongly the paired
+ * texts agree (e.g. Hán-Việt cognates and names per pair). Length-based
+ * alignment alone can latch onto unrelated text of similar rhythm.
+ */
+export type LexicalScorer = (pairs: Array<{ zh: string; vi: string }>) => number;
+
+/** Pairs scored per chapter (evenly sampled) to keep the check cheap. */
+const LEXICAL_SAMPLE = 12;
+/** Absolute floor, and share of the book's running average a chapter must reach. */
+const LEXICAL_FLOOR = 0.3;
+const LEXICAL_SHARE = 0.25;
+
 export class StreamingAligner {
   private pointer = 0;
   private currentRatio: number;
   private readonly vi: AlignUnitFeatures[];
+  private readonly viTexts: string[];
+  private readonly logLengths: number[];
+  private readonly scorer: LexicalScorer | null;
+  private lexicalTotal = 0;
+  private lexicalCount = 0;
+  private lexicalOnlyRejections = 0;
 
-  constructor(viUnits: string[], initialRatio = 3.6) {
+  constructor(viUnits: string[], initialRatio = 3.6, scorer: LexicalScorer | null = null) {
+    this.viTexts = viUnits;
+    this.scorer = scorer;
     this.vi = viUnits.map(unitFeatures);
+    this.logLengths = this.vi.map(unit => Math.log1p(unit.length));
     this.currentRatio = initialRatio;
   }
 
@@ -242,7 +291,7 @@ export class StreamingAligner {
     let result: AlignResult;
     for (;;) {
       const window = this.vi.slice(start, start + windowSize);
-      result = alignUnits(zh, window, { ratio: this.currentRatio, freeEnd: true });
+      result = alignUnits(zh, window, { ratio: this.currentRatio, freeEnd: true, skipStart: SKIP_START_UNITS });
       const exhausted = result.viConsumed >= window.length && start + window.length < this.vi.length;
       if (!exhausted || windowSize > zh.length * 4 + 200) break;
       windowSize *= 2;
@@ -256,14 +305,14 @@ export class StreamingAligner {
    * Editions sometimes reorder, merge or drop chapters; this lets alignment
    * recover instead of failing for the rest of the book.
    */
-  private searchCandidates(zh: AlignUnitFeatures[], count: number): number[] {
+  private searchCandidates(zh: AlignUnitFeatures[], count: number, from: number, to: number): number[] {
     const probe = zh.slice(0, Math.min(zh.length, 30));
     if (probe.length < 6) return [];
     const target = probe.map(unit => Math.log1p(unit.length * this.currentRatio));
-    const logs = this.vi.map(unit => Math.log1p(unit.length));
+    const logs = this.logLengths;
     const best: Array<{ offset: number; score: number }> = [];
-    const limit = this.vi.length - probe.length;
-    for (let offset = 0; offset <= limit; offset++) {
+    const limit = Math.min(to, this.vi.length - probe.length);
+    for (let offset = Math.max(0, from); offset <= limit; offset++) {
       let score = 0;
       for (let k = 0; k < probe.length; k++) {
         const index = offset + k;
@@ -283,20 +332,80 @@ export class StreamingAligner {
     return best.map(candidate => candidate.offset);
   }
 
-  alignChapter(zhUnits: string[], minConfidence = 0.55): StreamChapterResult {
+  /**
+   * Whether an alignment's pairs agree in content. Uses an absolute floor and
+   * a share of the running average (books differ in how many cognates they
+   * have). If the check keeps rejecting otherwise confident alignments, the
+   * book has no usable signal and the check switches itself off.
+   */
+  private lexicallyPlausible(zhUnits: string[], result: AlignResult, start: number): boolean {
+    if (!this.scorer || this.lexicalOnlyRejections >= 20) return true;
+    const groups = normalizeBeads(result.beads.map(bead => ({ zh: [...bead.zh], vi: [...bead.vi] })))
+      .filter(group => group.zh.length > 0 && group.vi.length > 0);
+    if (groups.length === 0) return false;
+    const step = Math.max(1, groups.length / LEXICAL_SAMPLE);
+    const pairs: Array<{ zh: string; vi: string }> = [];
+    for (let position = 0; position < groups.length && pairs.length < LEXICAL_SAMPLE; position += step) {
+      const group = groups[Math.floor(position)]!;
+      pairs.push({
+        zh: group.zh.map(index => zhUnits[index]!).join(''),
+        vi: group.vi.map(index => this.viTexts[start + index]!).join(' '),
+      });
+    }
+    const score = this.scorer(pairs);
+    const average = this.lexicalCount >= 10 ? this.lexicalTotal / this.lexicalCount : null;
+    const threshold = average === null ? LEXICAL_FLOOR : Math.min(LEXICAL_FLOOR, average * LEXICAL_SHARE);
+    if (score < threshold) {
+      this.lexicalOnlyRejections++;
+      return false;
+    }
+    this.lexicalOnlyRejections = 0;
+    this.lexicalTotal += score;
+    this.lexicalCount++;
+    return true;
+  }
+
+  /**
+   * Align the next chapter.
+   *
+   * When the chapter does not match where the stream left off, nearby
+   * offsets are searched. A match found that way is accepted only if it is
+   * not far away and the following chapter (`lookahead`) also continues right
+   * after it. Without these checks, short front matter or a chapter missing
+   * from the translation can latch onto unrelated text far in the book (the
+   * stream then snaps back on the next chapter, but the wrong text stays).
+   */
+  alignChapter(zhUnits: string[], options: { minConfidence?: number; lookahead?: string[] } = {}): StreamChapterResult {
+    const minConfidence = options.minConfidence ?? 0.55;
     const zh = zhUnits.map(unitFeatures);
     if (zh.length === 0 || this.vi.length === 0) return { beads: [], accepted: false, confidence: 0 };
 
+    // Volume titles, copyright pages and similar short pages carry no
+    // reliable signal; aligning them only steals the neighbouring text.
+    const zhLength = zh.reduce((sum, unit) => sum + unit.length, 0);
+    if (zh.length < MIN_CHAPTER_UNITS || zhLength < MIN_CHAPTER_CHARS) return { beads: [], accepted: false, confidence: 0 };
+
     let start = this.pointer;
     let result = start < this.vi.length ? this.alignAt(zh, start) : null;
+    if (result && result.confidence >= minConfidence && !this.lexicallyPlausible(zhUnits, result, start)) result = null;
     if (!result || result.confidence < minConfidence) {
-      for (const candidate of this.searchCandidates(zh, 4)) {
+      const lookahead = options.lookahead?.map(unitFeatures) ?? [];
+      const maxJump = Math.max(MIN_RESYNC_WINDOW, Math.round(this.vi.length * RESYNC_WINDOW_SHARE));
+      // Short chapters match too easily by length alone: never resync them.
+      const candidates = zh.length < MIN_RESYNC_UNITS
+        ? []
+        : this.searchCandidates(zh, 4, this.pointer - maxJump, this.pointer + maxJump);
+      for (const candidate of candidates) {
         const from = Math.max(0, candidate - 2);
         const attempt = this.alignAt(zh, from);
-        if (attempt.confidence >= minConfidence && (!result || attempt.confidence > result.confidence)) {
-          result = attempt;
-          start = from;
+        if (attempt.confidence < minConfidence || (result && attempt.confidence <= result.confidence)) continue;
+        if (lookahead.length > 0) {
+          const next = this.alignAt(lookahead, from + attempt.viConsumed);
+          if (next.confidence < minConfidence) continue;
         }
+        if (!this.lexicallyPlausible(zhUnits, attempt, from)) continue;
+        result = attempt;
+        start = from;
       }
     }
 

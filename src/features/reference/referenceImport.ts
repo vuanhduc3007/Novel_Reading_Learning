@@ -4,6 +4,8 @@ import { parseEpub, type ParsedBookData } from '../library/epubParser';
 import { parseTxt } from '../library/txtParser';
 import { splitVietnameseSentences } from '../library/sentenceSplitter';
 import { yieldToMain } from '../../utils/yieldToMain';
+import { loadHanViet } from '../immersion/hanVietData';
+import { cognateAgreement } from '../immersion/wordMatcher';
 import type { Chapter, Sentence } from '../../types';
 import {
   StreamingAligner,
@@ -18,8 +20,10 @@ import {
 /**
  * Bump when alignment improves enough that existing imports should be redone.
  * 2: promotional lines removed, interrupted-import paragraph fix.
+ * 3: front matter and unrelated chapters no longer receive text from elsewhere
+ *    in the book (resync limits, lookahead and Hán-Việt content check).
  */
-export const REFERENCE_VERSION = 2;
+export const REFERENCE_VERSION = 3;
 
 export interface ReferenceImportProgress {
   percent: number;
@@ -156,24 +160,49 @@ export async function importReferenceTranslation(
       viUnitParagraph.push(paragraphIndex);
     }
   });
-  const aligner = new StreamingAligner(viUnits);
+  // Lengths propose alignments; shared names and Hán-Việt terms confirm them.
+  const { index: hanViet } = await loadHanViet();
+  const aligner = new StreamingAligner(viUnits, 3.6, pairs => cognateAgreement(pairs, hanViet));
   onProgress({ percent: 10, detail: `Đã đọc ${viParagraphs.length.toLocaleString('vi-VN')} đoạn bản dịch` });
 
   let matchedChapters = 0;
   let matchedSentences = 0;
   let totalSentences = 0;
+  // Chapters are read slightly ahead: the next non-empty chapter confirms a
+  // resync (see StreamingAligner.alignChapter).
+  const loaded = new Map<number, { sentences: Sentence[]; units: ZhUnit[] }>();
+  const loadChapter = async (index: number) => {
+    let entry = loaded.get(index);
+    if (!entry) {
+      const chapter = chapters[index]!;
+      const sentences = await db.sentences
+        .where('[chapterId+index]')
+        .between([chapter.id, -Infinity], [chapter.id, Infinity])
+        .toArray();
+      entry = { sentences, units: chineseUnits(chapter, sentences, byParagraph) };
+      loaded.set(index, entry);
+    }
+    return entry;
+  };
+  const LOOKAHEAD_CHAPTERS = 3;
+
   for (let chapterIndex = 0; chapterIndex < chapters.length; chapterIndex++) {
     const chapter = chapters[chapterIndex]!;
-    const sentences = await db.sentences
-      .where('[chapterId+index]')
-      .between([chapter.id, -Infinity], [chapter.id, Infinity])
-      .toArray();
+    const { sentences, units } = await loadChapter(chapterIndex);
+    loaded.delete(chapterIndex);
     totalSentences += sentences.length;
     const references: Array<string | null> = sentences.map(() => null);
     const viParagraphOf: Array<number | undefined> = sentences.map(() => undefined);
 
-    const units = chineseUnits(chapter, sentences, byParagraph);
-    const result = units.length > 0 ? aligner.alignChapter(units.map(unit => unit.text)) : null;
+    let lookahead: string[] | undefined;
+    for (let next = chapterIndex + 1; next < Math.min(chapters.length, chapterIndex + 1 + LOOKAHEAD_CHAPTERS); next++) {
+      const nextUnits = (await loadChapter(next)).units;
+      if (nextUnits.length > 0) {
+        lookahead = nextUnits.map(unit => unit.text);
+        break;
+      }
+    }
+    const result = units.length > 0 ? aligner.alignChapter(units.map(unit => unit.text), { lookahead }) : null;
     if (result?.accepted) {
       matchedChapters++;
       for (const group of normalizeBeads(result.beads)) {

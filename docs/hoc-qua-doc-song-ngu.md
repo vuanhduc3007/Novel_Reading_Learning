@@ -76,6 +76,19 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
 - **Bản dịch Cổ Chân Nhân** có khối quảng cáo cuối mỗi chương ("🔥 … Bấm nghe …", "▶️ Nghe Chương …", "(Nhớ bấm Đăng Ký Kênh YouTube …)"). Các khối này giờ bị loại khi ghép.
 - Bản dịch ghép bằng phiên bản cũ được đánh dấu `referenceVersion` < 2, và banner ở đầu trang đọc sẽ nhắc chọn lại file để ghép lại.
 
+### 3.6 Nguyên tắc: bản Trung là bản chính
+Bản dịch người có chỗ thêm, có chỗ cắt. App luôn giữ **bản Trung đầy đủ của tác giả**. Đoạn nào bản dịch có thì dùng bản dịch người, đoạn nào không có thì giữ máy dịch. Không bao giờ được lấy văn bản ở chỗ khác trong sách nhét vào.
+
+Lỗi trước đây: lời tựa, giới thiệu, trang bản quyền (không có trong bản Việt) bị gán nhầm đoạn truyện ở tận giữa sách. Nguyên nhân là thuật toán chỉ so độ dài câu, nên với chương ngắn rất dễ trùng hợp nhầm. Kiểm tra trên cả bộ, đã có 9 chương bị gán nhầm kiểu này.
+
+Bây giờ một chương chỉ nhận bản dịch khi thoả cả bốn điều kiện:
+1. Chương đủ dài: ít nhất 3 câu/đoạn và 150 chữ Hán. Trang tiêu đề quyển, trang bản quyền giữ máy dịch.
+2. Nếu phải dò lại vị trí: chỉ dò trong vùng 2% bản dịch quanh chỗ đang ghép, và **chương kế tiếp phải khớp tiếp ngay sau đó**.
+3. **Nội dung phải khớp:** các cặp câu phải chung tên riêng và từ Hán-Việt (方源 ↔ Phương Nguyên). Chương ghép đúng có trung bình khoảng 2,6 từ chung mỗi cặp, thấp nhất khoảng 0,7. Các chương bị ghép nhầm trước đây chỉ có 0–0,08.
+4. Dòng thông tin ở đầu bản dịch ("Tác giả:", "Thể loại:", "— ★ —") bị bỏ. Các đoạn thừa ở đầu chương được phép không ghép với câu nào, thay vì bị gộp vào câu đầu.
+
+Kết quả trên cả bộ (ghép theo câu): các trang đầu (制作说明, 版权信息, 内容简介, 序, 第一卷) không nhận bản dịch, 第一节 khớp đúng từ câu đầu, không còn lần nhảy xa nào, khớp 2330/2344 chương.
+
 ## 4. Lộ trình đề xuất (chưa làm), xếp theo hiệu quả / công sức
 
 1. *(Đã làm một phần ở mục 3.4: âm Hán-Việt trong thẻ từ.)* **Âm Hán-Việt cho từng chữ/từ** (dạng ruby hoặc tooltip). Đây là lợi thế lớn nhất của người Việt: rất nhiều từ văn chương và tiên hiệp có âm Hán-Việt quen thuộc, ví dụ 天罗地网 → *thiên la địa võng*, 春秋蝉 → *Xuân Thu Thiền*, 魔头 → *ma đầu*. Nguồn dữ liệu: trường `kVietnamese` của Unicode Unihan (giấy phép mở) cùng một từ điển Hán-Việt. Từ điển trong tooltip nên hiện cả âm Hán-Việt bên cạnh pinyin.

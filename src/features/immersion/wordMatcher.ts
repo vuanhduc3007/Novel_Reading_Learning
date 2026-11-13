@@ -231,3 +231,18 @@ export function matchWords(chinese: string, vietnamese: string, index: HanVietIn
       && other.viStart <= match.viStart && other.viEnd >= match.viEnd))
     .sort((a, b) => a.viStart - b.viStart);
 }
+
+/**
+ * Average number of multi-character Hán-Việt cognates (names, terms) shared
+ * by aligned sentence pairs. Correct alignments of a novel score around 1–3,
+ * pairs of unrelated sentences close to 0; used to reject false alignments.
+ */
+export function cognateAgreement(pairs: Array<{ zh: string; vi: string }>, index: HanVietIndex): number {
+  if (pairs.length === 0) return 0;
+  let shared = 0;
+  for (const pair of pairs) {
+    shared += matchWords(pair.zh, pair.vi, index)
+      .filter(match => match.kind === 'hanviet' && Array.from(match.zh).length >= 2).length;
+  }
+  return shared / pairs.length;
+}

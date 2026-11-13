@@ -88,3 +88,34 @@ test('the promotional block at the end of a translated chapter is removed', () =
   ]), ['Đoạn một.', 'Đoạn hai.']);
   assert.deepEqual(aligner.stripChapterNoise(['A.', 'B.']), ['A.', 'B.']);
 });
+
+test('edition metadata and decoration lines are not treated as translation', () => {
+  assert.equal(aligner.isNoiseParagraph('Tác giả: Cổ Chân Nhân'), true);
+  assert.equal(aligner.isNoiseParagraph('Biên tập & Hiệu đính: Kênh Cổ Chân Nhân'), true);
+  assert.equal(aligner.isNoiseParagraph('— ★ —'), true);
+  assert.equal(aligner.isNoiseParagraph('Tác giả của bộ công pháp này là ai, không ai biết.'), false);
+});
+
+test('front matter and one-line chapters never take text from far in the book', () => {
+  // The book starts with short lines; far away there is a run of long ones.
+  const story = Array.from({ length: 6000 }, (_, i) =>
+    i >= 4000 && i < 4010 ? 'Đoạn dài '.repeat(40 + i % 7 * 9) : 'Câu ngắn ' + i);
+  const stream = new aligner.StreamingAligner(story);
+  // A short preface whose lengths only match that far run.
+  const preface = story.slice(4000, 4006).map(text => '字'.repeat(Math.round(text.length / 3.6)));
+  assert.equal(stream.alignChapter(preface, { lookahead: story.slice(4006, 4010).map(t => '字'.repeat(Math.round(t.length / 3.6))) }).accepted, false);
+  assert.equal(stream.position, 0);
+  // A volume title with a single line is never aligned.
+  assert.equal(stream.alignChapter(['魔性不改']).accepted, false);
+  assert.equal(stream.position, 0);
+});
+
+test('an alignment whose texts share no content is rejected and keeps machine translation', () => {
+  const chapter = makeChapter([12, 30, 8, 45, 20, 16, 33, 9, 27, 14], 'A');
+  const vi = chapter.map((text, i) => vietnamese(text.length - 1, i % 3 === 0));
+  const unrelated = new aligner.StreamingAligner(vi, 3.6, () => 0);
+  assert.equal(unrelated.alignChapter(chapter).accepted, false);
+  assert.equal(unrelated.position, 0);
+  const related = new aligner.StreamingAligner(vi, 3.6, () => 2);
+  assert.equal(related.alignChapter(chapter).accepted, true);
+});
