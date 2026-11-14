@@ -13,6 +13,7 @@ import { DictionaryPanel } from '../dictionary/DictionaryPanel';
 import { WordCard } from '../immersion/WordCard';
 import { useImmersionStore } from '../../stores/immersionStore';
 import { useSyncStore } from '../../stores/syncStore';
+import { startExposureTracking, stopExposureTracking } from '../immersion/exposureTracker';
 import { Skeleton, ErrorBanner } from '../../components';
 import { useTranslationScheduler } from '../translation/useTranslationScheduler';
 import { translationQueue } from '../translation/translationQueue';
@@ -45,6 +46,12 @@ export const ReaderPage: React.FC = () => {
     if (bookId && !isLoading && readingMode === 'vietnamese_first') void useImmersionStore.getState().init(bookId);
   }, [bookId, isLoading, readingMode]);
   useEffect(() => () => useImmersionStore.getState().closeCard(), [bookId]);
+  // Encounters count only for text read for the first time.
+  useEffect(() => {
+    if (!bookId || isLoading) return;
+    void startExposureTracking(bookId);
+    return () => stopExposureTracking();
+  }, [bookId, isLoading]);
 
   useEffect(() => {
     setTopBarVisible(isVisible);

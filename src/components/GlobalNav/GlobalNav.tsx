@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { BookOpen, Library, Languages, Settings } from 'lucide-react';
+import { BookOpen, Bookmark, Library, Languages, Settings } from 'lucide-react';
 import styles from './GlobalNav.module.css';
 import { SyncNavStatus } from '../../features/sync/SyncWidgets';
 
@@ -18,6 +18,10 @@ export function GlobalNav() {
         <NavLink to="/vocabulary" className={({isActive}) => `${styles.link} ${isActive ? styles.active : ''}`}>
           <Languages size={18} />
           <span className={styles.linkText}>Vocabulary</span>
+        </NavLink>
+        <NavLink to="/bookmarks" className={({isActive}) => `${styles.link} ${isActive ? styles.active : ''}`}>
+          <Bookmark size={18} />
+          <span className={styles.linkText}>Dấu trang</span>
         </NavLink>
       </div>
       <div className={styles.links}>

@@ -7,30 +7,12 @@ import { translationQueue } from '../translation/translationQueue';
 import { useImmersionStore, HINT_EXPOSURES } from '../../stores/immersionStore';
 import { groupParagraphs, readingUnits, type ReadingUnit } from './readingUnits';
 import { matchWords, type WordMatch } from './wordMatcher';
+import { countEncounters } from './exposureTracker';
 import styles from './Immersion.module.css';
 
-// Count an encounter once per sentence per session, when it is actually seen,
-// and at most a few times per chapter: spaced encounters across chapters are
-// what make a word stick, not twenty sightings on one page.
+// An encounter is counted once per sentence per session, and only for text
+// read for the first time (see exposureTracker).
 const seenSentences = new Set<string>();
-const MAX_EXPOSURES_PER_CHAPTER = 3;
-const chapterExposures = new Map<string, Map<string, number>>();
-
-function spacedWords(chapterId: string, words: string[]): string[] {
-  let counts = chapterExposures.get(chapterId);
-  if (!counts) {
-    counts = new Map();
-    chapterExposures.set(chapterId, counts);
-  }
-  const result: string[] = [];
-  for (const word of new Set(words)) {
-    const count = counts.get(word) ?? 0;
-    if (count >= MAX_EXPOSURES_PER_CHAPTER) continue;
-    counts.set(word, count + 1);
-    result.push(word);
-  }
-  return result;
-}
 const visibilityCallbacks = new WeakMap<Element, () => void>();
 let observer: IntersectionObserver | null = null;
 
@@ -97,13 +79,14 @@ const WovenWord = memo(({ match }: WovenWordProps) => {
 WovenWord.displayName = 'WovenWord';
 
 interface SentenceProps {
+  chapterIndex: number;
   unit: ReadingUnit;
   matches: WordMatch[];
   showingOriginal: boolean;
   onToggleOriginal: (sentenceId: string) => void;
 }
 
-const ImmersionSentence = memo(({ unit, matches, showingOriginal, onToggleOriginal }: SentenceProps) => {
+const ImmersionSentence = memo(({ chapterIndex, unit, matches, showingOriginal, onToggleOriginal }: SentenceProps) => {
   const ref = useRef<HTMLSpanElement>(null);
   const recordExposures = useImmersionStore(s => s.recordExposures);
   const { sentence, vietnamese } = unit;
@@ -115,9 +98,9 @@ const ImmersionSentence = memo(({ unit, matches, showingOriginal, onToggleOrigin
     return observeOnce(element, () => {
       if (seenSentences.has(sentence.id)) return;
       seenSentences.add(sentence.id);
-      recordExposures(spacedWords(sentence.chapterId, words));
+      recordExposures(countEncounters(sentence.bookId, chapterIndex, sentence.index, words));
     });
-  }, [sentence.id, words, recordExposures]);
+  }, [sentence.id, sentence.bookId, sentence.index, chapterIndex, words, recordExposures]);
 
   if (unit.merged) {
     return <span ref={ref} data-sentence-id={sentence.id} data-chapter-id={sentence.chapterId} />;
@@ -186,11 +169,12 @@ function Original({ unit, matches }: { unit: ReadingUnit; matches: WordMatch[] }
 const NO_MATCHES: WordMatch[] = [];
 
 interface ImmersionChapterProps {
+  chapterIndex: number;
   sentences: Sentence[];
 }
 
 /** Vietnamese-first rendering of one chapter, paragraph by paragraph. */
-export function ImmersionChapter({ sentences }: ImmersionChapterProps) {
+export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterProps) {
   const index = useImmersionStore(s => s.index);
   const learning = useImmersionStore(s => s.learning);
   const known = useImmersionStore(s => s.known);
@@ -237,6 +221,7 @@ export function ImmersionChapter({ sentences }: ImmersionChapterProps) {
               {paragraph.map(unit => (
                 <ImmersionSentence
                   key={unit.sentence.id}
+                  chapterIndex={chapterIndex}
                   unit={unit}
                   matches={shownMatches.get(unit.sentence.id) ?? NO_MATCHES}
                   showingOriginal={openOriginals.has(unit.sentence.id)}

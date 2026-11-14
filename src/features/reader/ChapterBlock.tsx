@@ -62,7 +62,7 @@ export function ChapterBlock({ chapter, chapterIndex, sentences, readingMode, on
         sentenceCount={sentences.length}
       />
       {readingMode === 'vietnamese_first' ? (
-        <ImmersionChapter sentences={sentences} />
+        <ImmersionChapter chapterIndex={chapterIndex} sentences={sentences} />
       ) : (
         <div className={styles.sentences}>
           {sentences.map((sentence) => (

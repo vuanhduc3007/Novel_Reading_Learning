@@ -52,7 +52,12 @@ export const ReaderTopBar: React.FC = () => {
         </div>
       </div>
       <div className={styles.right}>
-        <button className={styles.iconBtn} onClick={handleBookmarkToggle} aria-label="Bookmark">
+        <button
+          className={styles.iconBtn}
+          onClick={handleBookmarkToggle}
+          aria-label={isBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu câu đang đọc'}
+          title={isBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu câu ở đầu màn hình'}
+        >
           <Bookmark size={20} fill={isBookmarked ? 'currentColor' : 'none'} />
         </button>
         <button className={styles.iconBtn} onClick={toggleSettings} aria-label="Settings">
