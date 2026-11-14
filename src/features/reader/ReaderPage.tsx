@@ -12,6 +12,7 @@ import { DictionaryTooltip } from '../dictionary/DictionaryTooltip';
 import { DictionaryPanel } from '../dictionary/DictionaryPanel';
 import { WordCard } from '../immersion/WordCard';
 import { useImmersionStore } from '../../stores/immersionStore';
+import { useSyncStore } from '../../stores/syncStore';
 import { Skeleton, ErrorBanner } from '../../components';
 import { useTranslationScheduler } from '../translation/useTranslationScheduler';
 import { translationQueue } from '../translation/translationQueue';
@@ -51,7 +52,18 @@ export const ReaderPage: React.FC = () => {
 
   useEffect(() => {
     if (bookId) {
-      initializeReader(bookId);
+      // Pick up the position reached on another device (briefly; offline is fine).
+      let cancelled = false;
+      void useSyncStore.getState().syncBriefly(4000).finally(() => {
+        if (!cancelled) initializeReader(bookId);
+      });
+      return () => {
+        cancelled = true;
+        translationQueue.stopForReader(bookId);
+        useDictionaryStore.getState().handleWordLeave();
+        useDictionaryStore.getState().closePanel();
+        cleanup();
+      };
     }
     return () => {
       if (bookId) translationQueue.stopForReader(bookId);

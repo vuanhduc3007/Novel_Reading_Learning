@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ThemeMode } from '../types';
+import { markSettingsChanged } from '../features/sync/localChanges';
 
 interface AppState {
   theme: ThemeMode;
@@ -12,6 +13,7 @@ export const useAppStore = create<AppState>((set) => ({
   setTheme: (theme) => {
     set({ theme });
     localStorage.setItem('app-theme', theme);
+    markSettingsChanged();
     document.documentElement.setAttribute('data-theme', theme === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme);
   },
   initTheme: () => {

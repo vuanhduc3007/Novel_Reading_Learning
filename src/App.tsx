@@ -9,11 +9,13 @@ import { BookmarksPage } from './features/bookmarks/BookmarksPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { useVocabularyStore } from './stores/vocabularyStore';
 import { useAppStore } from './stores/appStore';
+import { useSyncStore } from './stores/syncStore';
 
 export function App() {
   useEffect(() => {
     useVocabularyStore.getState().init();
     useAppStore.getState().initTheme();
+    useSyncStore.getState().init();
   }, []);
 
   return (

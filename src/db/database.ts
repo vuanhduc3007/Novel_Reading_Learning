@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Book, BookWordStats, Chapter, Sentence, VocabularyItem, Bookmark, DictionaryCacheEntry, ImportStatus, WordProgress } from '../types';
+import type { Book, BookFile, BookWordStats, Chapter, Sentence, SyncDirty, VocabularyItem, Bookmark, DictionaryCacheEntry, ImportStatus, WordProgress } from '../types';
 
 export class ChineseReaderDB extends Dexie {
   books!: Table<Book>;
@@ -10,6 +10,8 @@ export class ChineseReaderDB extends Dexie {
   dictionaryCache!: Table<DictionaryCacheEntry>;
   wordStats!: Table<BookWordStats>;
   wordProgress!: Table<WordProgress>;
+  bookFiles!: Table<BookFile>;
+  syncDirty!: Table<SyncDirty>;
 
   constructor() {
     super('ChineseReaderDB');
@@ -95,6 +97,12 @@ export class ChineseReaderDB extends Dexie {
     this.version(7).stores({
       wordStats: 'bookId',
       wordProgress: 'word, status',
+    });
+
+    // Account sync: original files (to upload) and the local change queue.
+    this.version(8).stores({
+      bookFiles: '[bookId+kind], bookId',
+      syncDirty: '[kind+key], at',
     });
   }
 }

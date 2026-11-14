@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { BookOpen, Library, Languages, Settings } from 'lucide-react';
 import styles from './GlobalNav.module.css';
+import { SyncNavStatus } from '../../features/sync/SyncWidgets';
 
 export function GlobalNav() {
   return (
@@ -19,9 +20,12 @@ export function GlobalNav() {
           <span className={styles.linkText}>Vocabulary</span>
         </NavLink>
       </div>
-      <NavLink to="/settings" className={({isActive}) => `${styles.iconBtn} ${isActive ? styles.active : ''}`} title="Settings">
-        <Settings size={20} />
-      </NavLink>
+      <div className={styles.links}>
+        <SyncNavStatus />
+        <NavLink to="/settings" className={({isActive}) => `${styles.iconBtn} ${isActive ? styles.active : ''}`} title="Settings">
+          <Settings size={20} />
+        </NavLink>
+      </div>
     </nav>
   );
 }

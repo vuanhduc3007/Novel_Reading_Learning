@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { db } from '../db/database';
 import { generateId } from '../utils/id';
+import { markDirty } from '../features/sync/localChanges';
 
 interface VocabularyState {
   knownWords: Set<string>;
@@ -39,6 +40,7 @@ export const useVocabularyStore = create<VocabularyState>((set, get) => ({
     const newSet = new Set(get().knownWords);
     newSet.add(word);
     set({ knownWords: newSet });
+    markDirty('vocabulary', word);
   },
 
   removeWord: async (word) => {
@@ -48,6 +50,7 @@ export const useVocabularyStore = create<VocabularyState>((set, get) => ({
       const newSet = new Set(get().knownWords);
       newSet.delete(word);
       set({ knownWords: newSet });
+      markDirty('vocabulary', word);
     }
   },
 }));

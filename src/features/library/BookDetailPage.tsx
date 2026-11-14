@@ -11,6 +11,7 @@ import { ImportModal } from './ImportModal';
 import { importReferenceTranslation, removeReferenceTranslation, type ReferenceImportProgress } from '../reference/referenceImport';
 import type { Book } from '../../types';
 import styles from './BookDetailPage.module.css';
+import { BookCloudStatus } from '../sync/SyncWidgets';
 
 function formatFileSize(bytes?: number): string {
   if (bytes === undefined) return 'Không rõ';
@@ -220,6 +221,13 @@ export const BookDetailPage: React.FC = () => {
             <div className={styles.progressInfo}>{transPercent}% · {translatedSentences} / {totalSentences} câu</div>
           </div>
           
+          {book && (
+            <div className={styles.section}>
+              <div className={styles.sectionLabel}>Tài khoản</div>
+              <BookCloudStatus bookId={book.id} fileSizeBytes={book.fileSizeBytes} />
+            </div>
+          )}
+
           <div className={styles.section}>
             <div className={styles.sectionLabel}>Bản dịch tham khảo (người dịch)</div>
             {referenceProgress ? (

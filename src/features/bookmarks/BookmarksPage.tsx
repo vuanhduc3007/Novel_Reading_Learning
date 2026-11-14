@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
+import { markDirty } from '../sync/localChanges';
 import { useNavigate } from 'react-router-dom';
 import styles from './BookmarksPage.module.css';
 import { ArrowLeft, Trash2 } from 'lucide-react';
@@ -16,6 +17,7 @@ export const BookmarksPage: React.FC = () => {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     await db.bookmarks.delete(id);
+    markDirty('bookmark', id);
   };
 
   return (

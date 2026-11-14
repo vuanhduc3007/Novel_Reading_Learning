@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { db } from '../db/database';
 import { loadHanViet } from '../features/immersion/hanVietData';
 import { buildBookWordStats } from '../features/immersion/wordStats';
+import { markManyDirty, markSettingsChanged } from '../features/sync/localChanges';
 import type { HanVietData, HanVietIndex, WordMatch } from '../features/immersion/wordMatcher';
 import type { BookWordStats, WordLearningStatus, WordProgress } from '../types';
 
@@ -72,6 +73,9 @@ interface ImmersionState {
   openCard: (card: OpenWordCard) => void;
   closeCard: () => void;
   showsHint: (word: string) => boolean;
+  /** Re-read word progress from IndexedDB (after a sync). */
+  reloadProgress: () => Promise<void>;
+  reloadSettings: () => void;
 }
 
 let initSession = 0;
@@ -84,7 +88,9 @@ function scheduleFlush() {
     flushTimer = null;
     const rows = [...pendingWrites.values()];
     pendingWrites = new Map();
-    db.wordProgress.bulkPut(rows).catch(error => console.error('Failed to save word progress', error));
+    db.wordProgress.bulkPut(rows)
+      .then(() => markManyDirty('word', rows.map(row => row.word)))
+      .catch(error => console.error('Failed to save word progress', error));
   }, 2000);
 }
 
@@ -161,6 +167,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   setLearningSize: (size) => {
     if (!(LEARNING_SIZES as readonly number[]).includes(size)) return;
     try { localStorage.setItem('immersion-learning-size', String(size)); } catch { /* optional */ }
+    markSettingsChanged();
     const { stats, progress } = get();
     set({ learningSize: size, ...computeSets(stats, progress, size) });
   },
@@ -214,6 +221,17 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     progress.set(word, entry);
     persist(entry);
     set({ progress });
+  },
+
+  reloadProgress: async () => {
+    const rows = await db.wordProgress.toArray();
+    const progress = new Map(rows.map(row => [row.word, row]));
+    set({ progress, ...computeSets(get().stats, progress, get().learningSize) });
+  },
+
+  reloadSettings: () => {
+    const size = readLearningSize();
+    if (size !== get().learningSize) set({ learningSize: size, ...computeSets(get().stats, get().progress, size) });
   },
 
   openCard: (card) => set({ card }),

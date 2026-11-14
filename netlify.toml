@@ -5,6 +5,10 @@
 [build.environment]
   VITE_USE_MOCK_API = "false"
   VITE_API_BASE_URL = "https://chinese-reader-api.onrender.com"
+  # Accounts & sync (Supabase). The publishable key is meant to be public;
+  # data is protected by Row Level Security (supabase/schema.sql).
+  VITE_SUPABASE_URL = "https://ngdjatakpbvaahkmroqp.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "sb_publishable_Y6CLwbUg8edkvrxF1bQ7rQ_fueJTe4P"
 
 [[redirects]]
   from = "/*"

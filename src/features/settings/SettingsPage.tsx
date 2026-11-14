@@ -4,6 +4,7 @@ import { useReaderStore } from '../../stores/readerStore';
 import type { ThemeMode, ReadingSize } from '../../types';
 import { FONTS, WIDTHS } from '../reader/ReaderSettingsPanel';
 import styles from './SettingsPage.module.css';
+import { AccountPanel } from '../sync/AccountPanel';
 
 const SIZES: ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 
@@ -18,6 +19,11 @@ export function SettingsPage() {
       </header>
       
       <div className={styles.content}>
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Tài khoản & đồng bộ</h2>
+          <AccountPanel />
+        </section>
+
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Giao diện (Theme)</h2>
           <div className={styles.segmented}>

@@ -6,6 +6,7 @@ import { splitChineseParagraphs } from './sentenceSplitter';
 import type { Book, Chapter, Sentence, SourceFormat, ImportStatus } from '../../types';
 import type { ParsedBookData } from './epubParser';
 import { translationQueue } from '../translation/translationQueue';
+import { keepBookFile, markDirty } from '../sync/localChanges';
 
 export type ImportStep = 'uploading' | 'parsing' | 'extracting' | 'processing' | 'ready';
 
@@ -56,11 +57,19 @@ function toSentenceRecords(textContent: string, chapterId: string, bookId: strin
  * 
  * Pipeline: Uploading -> Parsing -> Extracting -> Processing -> Ready
  */
+export interface ImportOptions {
+  /** Use this id (a book rebuilt from the account keeps its id on every device). */
+  bookId?: string;
+  /** The book comes from the account: do not upload it back. */
+  fromCloud?: boolean;
+}
+
 export async function importBook(
   file: File,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  options: ImportOptions = {},
 ): Promise<string> {
-  const bookId = generateId();
+  const bookId = options.bookId ?? generateId();
   const format = detectFormat(file);
 
   // Keep the in-progress import outside IndexedDB. Only a complete readable
@@ -170,6 +179,12 @@ export async function importBook(
       }
     });
 
+    if (!options.fromCloud) {
+      // Keep the original so it can be uploaded to the account (now or after signing in).
+      await keepBookFile(bookId, 'source', file);
+      markDirty('book', bookId);
+    }
+
     // STEP 5: Ready!
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });
 
@@ -187,9 +202,11 @@ export async function importBook(
  * - Vocabulary items are kept but marked sourceBookAvailable: false
  * - Dictionary cache is not affected
  */
-export async function deleteBook(bookId: string): Promise<void> {
+export async function deleteBook(bookId: string, options: { fromCloud?: boolean } = {}): Promise<void> {
   translationQueue.cancelAllForBook(bookId);
-  await db.transaction('rw', [db.books, db.chapters, db.sentences, db.bookmarks, db.vocabularyItems], async () => {
+  await db.transaction('rw', [db.books, db.chapters, db.sentences, db.bookmarks, db.vocabularyItems, db.bookFiles, db.wordStats], async () => {
+    await db.bookFiles.where('bookId').equals(bookId).delete();
+    await db.wordStats.delete(bookId);
     // Delete sentences
     await db.sentences.where('bookId').equals(bookId).delete();
     // Delete chapters
@@ -203,6 +220,8 @@ export async function deleteBook(bookId: string): Promise<void> {
     // Delete the book itself
     await db.books.delete(bookId);
   });
+  // Deleting here deletes it from the account (and so from other devices).
+  if (!options.fromCloud) markDirty('book', bookId);
 }
 
 /**
@@ -305,8 +324,15 @@ export async function replaceBook(
         lastReadChapterIndex: 0,
         referenceTitle: null,
         paragraphsInferred: false,
+        cloudSourcePath: null,
+        cloudReferencePath: null,
+        progressUpdatedAt: Date.now(),
       });
     });
+    await db.bookFiles.where('bookId').equals(bookId).delete();
+    await keepBookFile(bookId, 'source', file);
+    markDirty('book', bookId);
+    markDirty('progress', bookId);
     onProgress?.({ step: 'ready', percent: 100, detail: 'Ready to read!' });
 
     return bookId;

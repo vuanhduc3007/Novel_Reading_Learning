@@ -6,6 +6,7 @@ import { splitVietnameseSentences } from '../library/sentenceSplitter';
 import { yieldToMain } from '../../utils/yieldToMain';
 import { loadHanViet } from '../immersion/hanVietData';
 import { cognateAgreement } from '../immersion/wordMatcher';
+import { keepBookFile, markDirty } from '../sync/localChanges';
 import type { Chapter, Sentence } from '../../types';
 import {
   StreamingAligner,
@@ -129,6 +130,7 @@ export async function importReferenceTranslation(
   bookId: string,
   file: File,
   onProgress: (progress: ReferenceImportProgress) => void = () => undefined,
+  options: { fromCloud?: boolean } = {},
 ): Promise<ReferenceImportSummary> {
   onProgress({ percent: 0, detail: 'Đang đọc file bản dịch…' });
   const parsed = await parseReferenceFile(file, onProgress);
@@ -248,6 +250,12 @@ export async function importReferenceTranslation(
   }
 
   await db.books.update(bookId, { referenceTitle: parsed.title || file.name, referenceVersion: REFERENCE_VERSION });
+  if (!options.fromCloud) {
+    // A new translation file replaces the one in the account.
+    await keepBookFile(bookId, 'reference', file);
+    await db.books.update(bookId, { cloudReferencePath: null });
+    markDirty('book', bookId);
+  }
   onProgress({ percent: 100, detail: 'Hoàn tất' });
   return {
     title: parsed.title || file.name,
@@ -260,7 +268,12 @@ export async function importReferenceTranslation(
 }
 
 /** Remove an imported reference translation; machine translation takes over again. */
-export async function removeReferenceTranslation(bookId: string): Promise<void> {
+export async function removeReferenceTranslation(bookId: string, options: { fromCloud?: boolean } = {}): Promise<void> {
+  await db.bookFiles.delete([bookId, 'reference']);
+  if (!options.fromCloud) {
+    await db.books.update(bookId, { cloudReferencePath: null });
+    markDirty('book', bookId);
+  }
   await db.sentences.where('bookId').equals(bookId).modify(sentence => {
     delete sentence.referenceText;
   });

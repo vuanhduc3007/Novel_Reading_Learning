@@ -42,6 +42,30 @@ export interface Book {
    * paragraph numbers were taken from an aligned reference translation.
    */
   paragraphsInferred?: boolean;
+  /** When the reading position last changed on this device (ms). */
+  progressUpdatedAt?: number;
+  /** Storage paths of the original files once uploaded to the account. */
+  cloudSourcePath?: string | null;
+  cloudReferencePath?: string | null;
+}
+
+// === Cloud sync ===
+
+/** Original file of a book (or its reference translation), kept for upload. */
+export interface BookFile {
+  bookId: string;
+  kind: 'source' | 'reference';
+  name: string;
+  blob: Blob;
+}
+
+export type SyncKind = 'book' | 'progress' | 'word' | 'vocabulary' | 'bookmark' | 'settings';
+
+/** Something changed locally and must be pushed; the current local state is sent. */
+export interface SyncDirty {
+  kind: SyncKind;
+  key: string;
+  at: number;
 }
 
 // === Chapter ===

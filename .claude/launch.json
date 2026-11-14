@@ -4,16 +4,47 @@
     {
       "name": "backend",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server/index.js"],
-      "env": { "PORT": "3000", "TRANSLATION_PROVIDER": "google-free", "DICTIONARY_PROVIDER": "mymemory" },
+      "runtimeArgs": [
+        "server/index.js"
+      ],
+      "env": {
+        "PORT": "3000",
+        "TRANSLATION_PROVIDER": "google-free",
+        "DICTIONARY_PROVIDER": "mymemory"
+      },
       "port": 3000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--port", "5185", "--strictPort"],
-      "env": { "VITE_API_BASE_URL": "http://localhost:3000", "VITE_USE_MOCK_API": "false" },
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5185",
+        "--strictPort"
+      ],
+      "env": {
+        "VITE_API_BASE_URL": "http://localhost:3000",
+        "VITE_USE_MOCK_API": "false"
+      },
       "port": 5185
+    },
+    {
+      "name": "frontend-account-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5186",
+        "--strictPort"
+      ],
+      "env": {
+        "VITE_API_BASE_URL": "http://localhost:3000",
+        "VITE_USE_MOCK_API": "false",
+        "VITE_SUPABASE_URL": "https://demo-project.supabase.co",
+        "VITE_SUPABASE_ANON_KEY": "demo-anon-key"
+      },
+      "port": 5186
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { db } from '../db/database';
+import { markDirty, markSettingsChanged } from '../features/sync/localChanges';
 import type { Book, Chapter, Sentence, ChineseFont, ContentWidth, ReadingMode, ReadingSize } from '../types';
 
 const READING_SIZES: Record<ReadingSize, { cnSize: number; cnLh: number; viSize: number; viLh: number }> = {
@@ -16,6 +17,8 @@ const READING_SIZE_KEYS: readonly ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 // A route change and React StrictMode can overlap IndexedDB reads. A monotonically
 // increasing session makes late results from an old reader instance harmless.
 let readerSession = 0;
+// Position last saved (or loaded) for the open book, to detect real moves.
+let lastSavedPosition: string | null = null;
 
 function readStoredReadingMode(): ReadingMode {
   const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-mode');
@@ -105,6 +108,8 @@ interface ReaderState {
   setReadingSize: (size: ReadingSize) => void;
   setLineHeightMultiplier: (mult: number) => void;
   setContentWidth: (width: ContentWidth) => void;
+  /** Re-read settings from localStorage (after they were synced from the account). */
+  reloadSettings: () => void;
   setChineseFont: (font: ChineseFont) => void;
   toggleContents: () => void;
   toggleSettings: () => void;
@@ -150,6 +155,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
   initializeReader: async (bookId) => {
     const session = ++readerSession;
+    lastSavedPosition = null;
     set({
       bookId,
       bookTitle: '',
@@ -193,6 +199,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         .where('bookId').equals(bookId)
         .count();
       if (session !== readerSession) return;
+
+      lastSavedPosition = `${bookId}|${book.lastReadChapterIndex ?? 0}|${book.lastReadSentenceId ?? null}`;
 
       // Determine starting chapter from saved position
       const startChapter = Math.max(0, Math.min(book.lastReadChapterIndex || 0, chapters.length - 1));
@@ -360,30 +368,47 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     if (!READING_MODES.includes(mode)) return;
     set({ readingMode: mode });
     localStorage.setItem('reader-mode', mode);
+    markSettingsChanged();
   },
 
   setReadingSize: (size) => {
     if (!READING_SIZE_KEYS.includes(size)) return;
     set({ readingSize: size, readingSizeValues: READING_SIZES[size] });
     localStorage.setItem('reader-size', size);
+    markSettingsChanged();
+  },
+
+  reloadSettings: () => {
+    const readingSize = readStoredReadingSize();
+    set({
+      readingMode: readStoredReadingMode(),
+      readingSize,
+      readingSizeValues: READING_SIZES[readingSize],
+      lineHeightMultiplier: readStoredLineHeight(),
+      contentWidth: readStoredWidth(),
+      chineseFont: readStoredFont(),
+    });
   },
 
   setContentWidth: (width) => {
     if (!(width in CONTENT_WIDTHS)) return;
     set({ contentWidth: width });
     try { localStorage.setItem('reader-width', width); } catch { /* optional */ }
+    markSettingsChanged();
   },
 
   setChineseFont: (font) => {
     if (font !== 'serif' && font !== 'sans') return;
     set({ chineseFont: font });
     try { localStorage.setItem('reader-cn-font', font); } catch { /* optional */ }
+    markSettingsChanged();
   },
 
   setLineHeightMultiplier: (mult) => {
     if (mult !== 1 && mult !== 1.2 && mult !== 1.5) return;
     set({ lineHeightMultiplier: mult });
     localStorage.setItem('reader-line-height', String(mult));
+    markSettingsChanged();
   },
 
   toggleContents: () => set((s) => ({ isContentsOpen: !s.isContentsOpen })),
@@ -431,11 +456,17 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     // Its placeholder position must never overwrite the last persisted position.
     if (!bookId || isLoading || loadError || chapters.length === 0) return;
     try {
+      const key = `${bookId}|${currentChapterIndex}|${currentSentenceId}`;
+      const moved = key !== lastSavedPosition;
       await db.books.update(bookId, {
         lastReadChapterIndex: currentChapterIndex,
         lastReadSentenceId: currentSentenceId,
         readingProgress,
+        // Only a real move counts as newer than other devices' positions.
+        ...(moved ? { progressUpdatedAt: Date.now() } : {}),
       });
+      if (moved) markDirty('progress', bookId);
+      lastSavedPosition = key;
     } catch (error) {
       console.error('Failed to save reading position', error);
     }
