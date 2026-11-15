@@ -19,6 +19,9 @@ const READING_SIZE_KEYS: readonly ReadingSize[] = ['S', 'M', 'L', 'XL', 'XXL'];
 let readerSession = 0;
 // Position last saved (or loaded) for the open book, to detect real moves.
 let lastSavedPosition: string | null = null;
+// Whether the reader moved since the book was opened (decides between jumping
+// to a position synced from another device and offering it).
+let movedSinceOpen = false;
 
 function readStoredReadingMode(): ReadingMode {
   const value = typeof window === 'undefined' ? null : localStorage.getItem('reader-mode');
@@ -93,6 +96,11 @@ interface ReaderState {
 
   // Scroll jump target (for chapter jumps from Contents)
   jumpTargetChapterIndex: number | null;
+  /**
+   * A newer position for the open book arrived from another device while the
+   * reader had already moved here; offered to the reader instead of jumping.
+   */
+  remotePosition: { chapterIndex: number; sentenceId: string | null } | null;
   jumpTargetSentenceId: string | null;
 
   // Actions
@@ -116,6 +124,10 @@ interface ReaderState {
   setTopBarVisible: (v: boolean) => void;
   jumpToLocation: (chapterIndex: number, sentenceId?: string) => void;
   clearJumpTarget: () => void;
+  /** A newer position for the open book came from another device. */
+  receiveRemotePosition: (chapterIndex: number, sentenceId: string | null) => void;
+  acceptRemotePosition: () => void;
+  dismissRemotePosition: () => void;
   saveReadingPosition: () => Promise<void>;
   updateSentenceInStore: (chapterId: string, sentenceId: string, updates: Partial<Sentence>) => void;
   /** Re-read sentences and book metadata after a bulk change (reference import). */
@@ -151,11 +163,13 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   contentWidth: readStoredWidth(),
   chineseFont: readStoredFont(),
   jumpTargetChapterIndex: null,
+  remotePosition: null,
   jumpTargetSentenceId: null,
 
   initializeReader: async (bookId) => {
     const session = ++readerSession;
     lastSavedPosition = null;
+    movedSinceOpen = false;
     set({
       bookId,
       bookTitle: '',
@@ -172,6 +186,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       chapterHeights: {},
       jumpTargetChapterIndex: null,
       jumpTargetSentenceId: null,
+      remotePosition: null,
       isLoading: true,
       loadError: null,
     });
@@ -245,7 +260,11 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       if (session !== readerSession) return;
       if (!get().currentSentenceId && get().currentChapterIndex === startChapter && startId) {
         const firstSentence = get().chapterSentences[startId]?.[0];
-        if (firstSentence) set({ currentSentenceId: firstSentence.id });
+        if (firstSentence) {
+          set({ currentSentenceId: firstSentence.id });
+          // Defaulting to the first sentence is not reading progress.
+          lastSavedPosition = `${bookId}|${startChapter}|${firstSentence.id}`;
+        }
       }
 
       // Load adjacent chapters
@@ -450,6 +469,36 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
   clearJumpTarget: () => set({ jumpTargetChapterIndex: null, jumpTargetSentenceId: null }),
 
+  receiveRemotePosition: (chapterIndex, sentenceId) => {
+    const state = get();
+    if (!state.bookId || state.isLoading) return;
+    if (chapterIndex === state.currentChapterIndex && sentenceId === state.currentSentenceId) return;
+    // The stored position is now the remote one; this device has not moved
+    // relative to it until the reader scrolls.
+    lastSavedPosition = `${state.bookId}|${chapterIndex}|${sentenceId}`;
+    if (!movedSinceOpen) {
+      // Just opened and not read yet here: go straight to where they were.
+      state.jumpToLocation(chapterIndex, sentenceId ?? undefined);
+      return;
+    }
+    set({ remotePosition: { chapterIndex, sentenceId } });
+  },
+
+  acceptRemotePosition: () => {
+    const remote = get().remotePosition;
+    if (!remote) return;
+    set({ remotePosition: null });
+    get().jumpToLocation(remote.chapterIndex, remote.sentenceId ?? undefined);
+  },
+
+  dismissRemotePosition: () => {
+    const state = get();
+    set({ remotePosition: null });
+    // Staying here: this position becomes the newest one.
+    lastSavedPosition = null;
+    void state.saveReadingPosition();
+  },
+
   saveReadingPosition: async () => {
     const { bookId, currentChapterIndex, currentSentenceId, readingProgress, isLoading, loadError, chapters } = get();
     // StrictMode and fast navigation can clean up an unfinished initialization.
@@ -457,16 +506,18 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     if (!bookId || isLoading || loadError || chapters.length === 0) return;
     try {
       const key = `${bookId}|${currentChapterIndex}|${currentSentenceId}`;
-      const moved = key !== lastSavedPosition;
+      // Unchanged since opening (or since a remote position was applied):
+      // writing would overwrite a newer position synced from another device.
+      if (key === lastSavedPosition) return;
+      lastSavedPosition = key;
+      movedSinceOpen = true;
       await db.books.update(bookId, {
         lastReadChapterIndex: currentChapterIndex,
         lastReadSentenceId: currentSentenceId,
         readingProgress,
-        // Only a real move counts as newer than other devices' positions.
-        ...(moved ? { progressUpdatedAt: Date.now() } : {}),
+        progressUpdatedAt: Date.now(),
       });
-      if (moved) markDirty('progress', bookId);
-      lastSavedPosition = key;
+      markDirty('progress', bookId);
     } catch (error) {
       console.error('Failed to save reading position', error);
     }

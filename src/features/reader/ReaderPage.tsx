@@ -11,6 +11,7 @@ import { ReaderSettingsPanel } from './ReaderSettingsPanel';
 import { DictionaryTooltip } from '../dictionary/DictionaryTooltip';
 import { DictionaryPanel } from '../dictionary/DictionaryPanel';
 import { WordCard } from '../immersion/WordCard';
+import { RemotePositionBanner } from './RemotePositionBanner';
 import { useImmersionStore } from '../../stores/immersionStore';
 import { useSyncStore } from '../../stores/syncStore';
 import { currentReadPosition, startExposureTracking, stopExposureTracking } from '../immersion/exposureTracker';
@@ -75,10 +76,13 @@ export const ReaderPage: React.FC = () => {
 
   useEffect(() => {
     if (bookId) {
-      // Pick up the position reached on another device (briefly; offline is fine).
+      // Pick up the position reached on another device first (one quick
+      // request; offline or slow is fine), then sync everything else.
       let cancelled = false;
-      void useSyncStore.getState().syncBriefly(4000).finally(() => {
-        if (!cancelled) initializeReader(bookId);
+      void useSyncStore.getState().fetchBookProgress(bookId, 3000).finally(() => {
+        if (cancelled) return;
+        void initializeReader(bookId);
+        void useSyncStore.getState().syncNow();
       });
       return () => {
         cancelled = true;
@@ -153,6 +157,7 @@ export const ReaderPage: React.FC = () => {
       <DictionaryTooltip />
       <DictionaryPanel />
       <WordCard />
+      <RemotePositionBanner />
     </div>
   );
 };

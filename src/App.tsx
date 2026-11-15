@@ -10,12 +10,15 @@ import { SettingsPage } from './features/settings/SettingsPage';
 import { useVocabularyStore } from './stores/vocabularyStore';
 import { useAppStore } from './stores/appStore';
 import { useSyncStore } from './stores/syncStore';
+import { purgeOrphanedBookData } from './features/library/bookMaintenance';
 
 export function App() {
   useEffect(() => {
     useVocabularyStore.getState().init();
     useAppStore.getState().initTheme();
     useSyncStore.getState().init();
+    // Finish removing books whose deletion was interrupted.
+    void purgeOrphanedBookData();
   }, []);
 
   return (

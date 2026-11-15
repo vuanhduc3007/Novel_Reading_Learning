@@ -7,6 +7,7 @@ import type { Book, Chapter, Sentence, SourceFormat, ImportStatus } from '../../
 import type { ParsedBookData } from './epubParser';
 import { translationQueue } from '../translation/translationQueue';
 import { keepBookFile, markDirty } from '../sync/localChanges';
+import { purgeOrphanedBookData } from './bookMaintenance';
 
 export type ImportStep = 'uploading' | 'parsing' | 'extracting' | 'processing' | 'ready';
 
@@ -204,13 +205,12 @@ export async function importBook(
  */
 export async function deleteBook(bookId: string, options: { fromCloud?: boolean } = {}): Promise<void> {
   translationQueue.cancelAllForBook(bookId);
-  await db.transaction('rw', [db.books, db.chapters, db.sentences, db.bookmarks, db.vocabularyItems, db.bookFiles, db.wordStats], async () => {
+  // The book leaves the library immediately. Its chapters and sentences (a
+  // large book has 300k+) are removed afterwards in batches: deleting them in
+  // one transaction takes over a minute and is lost if the tab is closed.
+  await db.transaction('rw', [db.books, db.bookmarks, db.vocabularyItems, db.bookFiles, db.wordStats], async () => {
     await db.bookFiles.where('bookId').equals(bookId).delete();
     await db.wordStats.delete(bookId);
-    // Delete sentences
-    await db.sentences.where('bookId').equals(bookId).delete();
-    // Delete chapters
-    await db.chapters.where('bookId').equals(bookId).delete();
     // Delete bookmarks for this book
     await db.bookmarks.where('bookId').equals(bookId).delete();
     // Mark vocabulary items as source unavailable (don't delete them)
@@ -222,6 +222,7 @@ export async function deleteBook(bookId: string, options: { fromCloud?: boolean 
   });
   // Deleting here deletes it from the account (and so from other devices).
   if (!options.fromCloud) markDirty('book', bookId);
+  void purgeOrphanedBookData();
 }
 
 /**

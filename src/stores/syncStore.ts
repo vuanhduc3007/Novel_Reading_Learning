@@ -9,6 +9,7 @@ import { useImmersionStore } from './immersionStore';
 import { useVocabularyStore } from './vocabularyStore';
 import { useReaderStore } from './readerStore';
 import { useAppStore } from './appStore';
+import { db } from '../db/database';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim();
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -49,6 +50,8 @@ interface SyncState {
   syncNow: () => Promise<void>;
   /** Wait (at most `timeoutMs`) for a sync, e.g. before opening a book. */
   syncBriefly: (timeoutMs: number) => Promise<void>;
+  /** Fetch only this book's position from the account (at most `timeoutMs`). */
+  fetchBookProgress: (bookId: string, timeoutMs: number) => Promise<void>;
 }
 
 const hooks: SyncHooks = {
@@ -68,10 +71,19 @@ const hooks: SyncHooks = {
       useAppStore.getState().initTheme();
       useImmersionStore.getState().reloadSettings();
     }
-    // Reading positions are applied to IndexedDB and used the next time a
-    // book is opened; an open reader is never moved under the reader's eyes.
+    // A newer position for the book that is open right now: jump there if
+    // the reader has not started reading here yet, otherwise offer it.
+    const reader = useReaderStore.getState();
+    if (reader.bookId && changed.progressBookIds.includes(reader.bookId)) void offerPositionToReader(reader.bookId);
   },
 };
+
+async function offerPositionToReader(bookId: string) {
+  const book = await db.books.get(bookId);
+  const reader = useReaderStore.getState();
+  if (!book || reader.bookId !== bookId) return;
+  reader.receiveRemotePosition(book.lastReadChapterIndex ?? 0, book.lastReadSentenceId ?? null);
+}
 
 let running: Promise<void> | null = null;
 let runAgain = false;
@@ -176,6 +188,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       } while (runAgain && get().user?.id === user.id);
     })().finally(() => { running = null; });
     return running;
+  },
+
+  fetchBookProgress: async (bookId, timeoutMs) => {
+    const user = get().user;
+    const pending = getClient();
+    if (!user || !pending) return;
+    const fetch = (async () => {
+      const supabase = await pending;
+      const engine = new SyncEngine(new SupabaseCloud(supabase), user.id, hooks);
+      await engine.pullProgress(bookId);
+    })().catch(error => console.warn('Could not fetch reading position', error));
+    await Promise.race([fetch, new Promise<void>(resolve => setTimeout(resolve, timeoutMs))]);
   },
 
   syncBriefly: async (timeoutMs) => {

@@ -4,7 +4,7 @@
 | Dữ liệu | Cách đồng bộ |
 |---|---|
 | Sách | File gốc (epub/txt) và file bản dịch người được lưu trong kho file riêng của tài khoản. Máy mới tự tải về rồi tự nhập/ghép lại, mất 2–4 phút cho lần đầu. Sách giữ cùng mã trên mọi máy. |
-| Vị trí đang đọc | Lưu theo (chương, câu). Khi mở sách, app chờ tối đa 4 giây để lấy vị trí mới nhất từ máy khác. Sách đang mở không bao giờ bị nhảy vị trí giữa chừng. |
+| Vị trí đang đọc | Lưu theo (chương, câu). Trước khi mở sách, app hỏi riêng vị trí của cuốn đó (một request, tối đa 3 giây). Nếu vị trí mới tới khi sách đang mở: chưa đọc gì trên máy này thì nhảy thẳng tới; đã đọc thì hiện thanh "Bạn đã đọc tới … trên máy khác" với nút **Đến chỗ đó** / **Ở lại đây**. Đóng trang mà chưa đọc gì thì không ghi đè vị trí của máy khác. |
 | Từ đang học / đã thuộc (chế độ Việt + Hán) | Từng từ. |
 | Sổ từ vựng, dấu trang | Thêm/xoá đều đồng bộ. Dấu trang được gắn lại đúng câu trên máy kia. |
 | Cài đặt đọc | Chế độ, cỡ chữ, khoảng dòng, chiều rộng, font, giao diện, số từ học cùng lúc. |
@@ -20,6 +20,10 @@
 - Định kỳ mỗi 2 phút.
 
 Không có mạng vẫn đọc bình thường; thay đổi được xếp hàng và tự gửi khi có mạng.
+
+**Cùng một sách nhập riêng trên hai máy** (trước khi có tài khoản): khi đăng nhập, app nhận ra bản trong máy trùng với sách trên tài khoản (cùng tên và cùng kích thước file). App chuyển bản trong máy sang mã sách của tài khoản thay vì tải thêm một bản nữa, nên tiến độ hai máy khớp nhau.
+
+**Xoá sách:** sách biến mất khỏi thư viện ngay. Phần dữ liệu câu chữ (sách lớn có hơn 300 nghìn câu, xoá mất khoảng hơn một phút) được dọn ở chế độ nền; nếu đóng tab giữa chừng thì lần mở app sau sẽ dọn tiếp.
 
 ## Cài đặt (làm một lần)
 1. Tạo tài khoản và một project miễn phí tại https://supabase.com.

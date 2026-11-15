@@ -3,6 +3,7 @@ import { generateId } from '../../utils/id';
 import type { Book, SyncDirty, SyncKind } from '../../types';
 import type { CloudApi, CloudRow, CloudTable } from './cloudApi';
 import { SETTINGS_KEYS, SETTINGS_UPDATED_KEY } from './localChanges';
+import { remapBookId } from '../library/bookMaintenance';
 
 /**
  * One sync pass: pull what other devices wrote, push local changes, then
@@ -180,6 +181,18 @@ export class SyncEngine {
       return;
     }
     if (!local) {
+      // The same file imported on this device before signing in has its own
+      // id; link it to the account's copy instead of downloading a duplicate.
+      const twin = await this.findLocalTwin(row);
+      if (twin) {
+        await remapBookId(twin.id, id, detail => this.report({ phase: 'download', detail }));
+        await db.books.update(id, { cloudSourcePath: str(row.source_path) });
+        changed.books = true;
+        // Progress and bookmarks the account has for this book apply now.
+        for (const progress of await this.api.select('reading_progress', 'book_id', id)) await this.applyProgress(progress, changed);
+        for (const bookmark of await this.api.select('bookmarks', 'book_id', id)) await this.applyBookmark(bookmark, changed);
+        return;
+      }
       if (row.source_path) toDownload.set(id, row);
       return;
     }
@@ -193,6 +206,26 @@ export class SyncEngine {
       changed.books = true;
     }
     if (str(row.source_path) && !local.cloudSourcePath) await db.books.update(id, { cloudSourcePath: str(row.source_path) });
+  }
+
+  /** A local book not in the account yet that is the same file as `row`. */
+  private async findLocalTwin(row: CloudRow): Promise<Book | undefined> {
+    const title = str(row.title);
+    const size = num(row.source_size, -1);
+    if (!title || size <= 0) return undefined;
+    const candidates = await db.books.filter(book =>
+      book.title === title && book.fileSizeBytes === size && !book.cloudSourcePath && book.importStatus === 'ready_to_read').toArray();
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
+
+  /**
+   * Fetch only this book's reading position (quick; used right before a book
+   * is opened). Returns true when a newer position was applied.
+   */
+  async pullProgress(bookId: string): Promise<boolean> {
+    const changed: AppliedChanges = { books: false, words: false, vocabulary: false, bookmarks: false, settings: false, progressBookIds: [] };
+    for (const row of await this.api.select('reading_progress', 'book_id', bookId)) await this.applyProgress(row, changed);
+    return changed.progressBookIds.includes(bookId);
   }
 
   private async applyProgress(row: CloudRow, changed: AppliedChanges, force = false) {

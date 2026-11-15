@@ -186,6 +186,7 @@ test('deleting the book on A removes it from the cloud and from B', async () => 
   assert.equal([...cloud.files.keys()].filter(path => path.includes(bookId)).length, 0, 'files removed');
   await sync(B);
   assert.equal(await B.db.books.get(bookId), undefined);
+  await (await B.vite.ssrLoadModule('/src/features/library/bookMaintenance.ts')).purgeOrphanedBookData();
   assert.equal(await B.db.sentences.where('bookId').equals(bookId).count(), 0);
 });
 
@@ -205,4 +206,56 @@ test('a book imported before accounts (no original file kept) is reported, not u
   });
   assert.deepEqual((await sync(A)).missingFiles, []);
   assert.equal(cloud.tables.get('books').get(oldBookId).deleted, false);
+});
+
+test('the same book imported separately on two devices is linked, not duplicated, and positions follow', async () => {
+  const C = await makeDevice('C');
+  try {
+    let twinId;
+    await on(A, async () => {
+      twinId = await A.importEngine.importBook(new File([chineseBook()], 'twin.txt', { type: 'text/plain' }));
+    });
+    await sync(A);
+    // C imported the same file on its own before signing in (no file kept).
+    let localId;
+    await on(C, async () => {
+      localId = await C.importEngine.importBook(new File([chineseBook()], 'twin.txt', { type: 'text/plain' }));
+      await C.db.bookFiles.clear();
+    });
+    assert.notEqual(localId, twinId);
+    const filesBefore = cloud.files.size;
+    await sync(C);
+    assert.equal(await C.db.books.get(localId), undefined, 'old id gone');
+    const linked = await C.db.books.get(twinId);
+    assert.ok(linked, 'book now uses the account id');
+    assert.equal((await C.db.books.toArray()).filter(book => book.title === linked.title).length, 1, 'no duplicate downloaded');
+    assert.equal(cloud.files.size, filesBefore);
+    assert.equal(await C.db.sentences.where('bookId').equals(twinId).count(), await A.db.sentences.where('bookId').equals(twinId).count());
+
+    // A reads further; C picks it up with the quick per-book fetch.
+    await on(A, async () => {
+      const chapters = await A.db.chapters.where('bookId').equals(twinId).sortBy('index');
+      const target = await A.db.sentences.where('[chapterId+index]').equals([chapters[1].id, 7]).first();
+      await A.db.books.update(twinId, { lastReadChapterIndex: 1, lastReadSentenceId: target.id, progressUpdatedAt: Date.now() });
+      A.changes.markDirty('progress', twinId);
+    });
+    await sync(A);
+    const applied = await on(C, () => new C.engineModule.SyncEngine(cloud, USER, C.hooks).pullProgress(twinId));
+    assert.equal(applied, true);
+    const onC = await C.db.books.get(twinId);
+    assert.equal(onC.lastReadChapterIndex, 1);
+    assert.equal((await C.db.sentences.get(onC.lastReadSentenceId)).index, 7);
+  } finally {
+    await C.vite.close();
+  }
+});
+
+test('deleting a book is immediate; its sentences are cleaned up afterwards', async () => {
+  const id = await on(A, () => A.importEngine.importBook(new File([chineseBook()], 'xoa.txt', { type: 'text/plain' })));
+  const maintenance = await A.vite.ssrLoadModule('/src/features/library/bookMaintenance.ts');
+  await on(A, () => A.importEngine.deleteBook(id));
+  assert.equal(await A.db.books.get(id), undefined);
+  await maintenance.purgeOrphanedBookData();
+  assert.equal(await A.db.sentences.where('bookId').equals(id).count(), 0);
+  assert.equal(await A.db.chapters.where('bookId').equals(id).count(), 0);
 });
