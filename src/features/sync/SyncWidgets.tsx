@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { Cloud, CloudOff, RefreshCw, Upload } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '../../components';
@@ -90,6 +90,39 @@ export function BookCloudStatus({ bookId, fileSizeBytes }: { bookId: string; fil
         </Button>
       </div>
       <input ref={input} type="file" accept=".epub,.txt,.md,.html,.htm" hidden onChange={onFile} />
+    </div>
+  );
+}
+
+/**
+ * Library notice: books on this device that are not in the account (imported
+ * before signing in, original file not kept), so other devices cannot see them.
+ */
+export function LocalOnlyBooksNotice() {
+  const user = useSyncStore(s => s.user);
+  const books = useLiveQuery(async () => {
+    const all = await db.books.toArray();
+    const local = all.filter(book => book.importStatus === 'ready_to_read' && !book.cloudSourcePath);
+    // Keys only: the files themselves are large.
+    const keys = await db.bookFiles.toCollection().primaryKeys() as unknown as Array<[string, string]>;
+    const withFile = new Set(keys.filter(([, kind]) => kind === 'source').map(([bookId]) => bookId));
+    return local.filter(book => !withFile.has(book.id));
+  }, []);
+  if (!user || !books || books.length === 0) return null;
+  return (
+    <div className={styles.banner} role="status">
+      <span>
+        <strong>{books.length} sách chỉ có trên máy này</strong>: được nhập trước khi có tài khoản nên app không giữ file gốc,
+        máy khác sẽ không thấy. Mở sách, chọn lại đúng file gốc một lần là xong (tiến độ giữ nguyên):
+      </span>
+      <span>
+        {books.map((book, index) => (
+          <React.Fragment key={book.id}>
+            {index > 0 && ', '}
+            <Link to={`/book/${book.id}`}>{book.title}</Link>
+          </React.Fragment>
+        ))}
+      </span>
     </div>
   );
 }

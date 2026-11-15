@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, DragEvent } from 'react';
-import { SyncLibraryBanner } from '../sync/SyncWidgets';
+import { LocalOnlyBooksNotice, SyncLibraryBanner } from '../sync/SyncWidgets';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/database';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -102,6 +102,7 @@ export function LibraryPage() {
       )}
 
       <SyncLibraryBanner />
+      <LocalOnlyBooksNotice />
       {books.length === 0 ? (
         <EmptyLibrary />
       ) : (

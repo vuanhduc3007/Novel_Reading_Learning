@@ -17,7 +17,7 @@ function formatTime(timestamp: number | null): string {
 
 /** Sign-in form or account status, shown on the Settings page. */
 export function AccountPanel() {
-  const { configured, authReady, user, status, progress, lastSyncedAt, error, missingFiles, signIn, signUp, signOut, syncNow } = useSyncStore();
+  const { configured, authReady, user, status, progress, lastSyncedAt, error, missingFiles, cloudBooks, signIn, signUp, signOut, syncNow } = useSyncStore();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -48,6 +48,12 @@ export function AccountPanel() {
               ? `Lỗi đồng bộ: ${error}`
               : `Đồng bộ lần cuối: ${formatTime(lastSyncedAt)}${pending > 0 ? ` · ${pending} thay đổi chờ gửi` : ''}`}
         </p>
+        {cloudBooks && (
+          <p className={styles.muted}>
+            Sách trên tài khoản: {cloudBooks.length > 0 ? <strong>{cloudBooks.join(', ')}</strong> : 'chưa có cuốn nào'}.
+            {' '}Máy khác đăng nhập cùng tài khoản sẽ tự tải những sách này về.
+          </p>
+        )}
         {missingFiles.length > 0 && (
           <p className={styles.warning}>
             {missingFiles.length} sách được nhập trước khi có tính năng tài khoản nên chưa có file gốc để đưa lên.

@@ -44,6 +44,8 @@ export interface SyncResult {
   downloadedBooks: string[];
   /** Local books that cannot be uploaded because the original file is not kept. */
   missingFiles: string[];
+  /** Titles of the books stored in the account (what other devices will get). */
+  cloudBooks: string[];
 }
 
 const TABLES: CloudTable[] = ['books', 'reading_progress', 'word_progress', 'vocabulary', 'bookmarks', 'settings'];
@@ -127,7 +129,12 @@ export class SyncEngine {
       changed.progressBookIds.push(...this.reconciled.progressBookIds);
     }
     this.hooks.afterApply(changed);
-    return { pushed, pulled, downloadedBooks, missingFiles };
+    // The account's book list is small; read it whole so the UI can say
+    // exactly what other devices will see.
+    const cloudBooks = (await this.api.pull('books', null))
+      .filter(row => !row.deleted && row.source_path)
+      .map(row => String(row.title || 'Sách'));
+    return { pushed, pulled, downloadedBooks, missingFiles, cloudBooks };
   }
 
   /** First sync of this account on this device: everything local is new to the cloud. */

@@ -42,6 +42,8 @@ interface SyncState {
   error: string | null;
   /** Local books whose original file is not kept and so cannot be uploaded. */
   missingFiles: string[];
+  /** Book titles in the account after the last sync (null: not synced yet). */
+  cloudBooks: string[] | null;
 
   init: () => void;
   signIn: (email: string, password: string) => Promise<void>;
@@ -99,6 +101,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   lastSyncedAt: null,
   error: null,
   missingFiles: [],
+  cloudBooks: null,
 
   init: () => {
     const pending = getClient();
@@ -160,7 +163,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     // Push what is pending first so nothing read on this device is lost.
     try { await get().syncNow(); } catch { /* best effort */ }
     await supabase.auth.signOut();
-    set({ user: null, status: 'idle', progress: null, error: null, missingFiles: [] });
+    set({ user: null, status: 'idle', progress: null, error: null, missingFiles: [], cloudBooks: null });
   },
 
   syncNow: async () => {
@@ -179,7 +182,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         try {
           const engine = new SyncEngine(new SupabaseCloud(supabase), user.id, hooks, progress => set({ progress }));
           const result = await engine.run();
-          set({ status: 'idle', progress: null, lastSyncedAt: Date.now(), missingFiles: result.missingFiles });
+          set({ status: 'idle', progress: null, lastSyncedAt: Date.now(), missingFiles: result.missingFiles, cloudBooks: result.cloudBooks });
         } catch (error) {
           console.error('Sync failed', error);
           set({ status: 'error', progress: null, error: error instanceof Error ? error.message : String(error) });
