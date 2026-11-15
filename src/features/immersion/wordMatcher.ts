@@ -168,20 +168,69 @@ function characterSpans(chinese: string): ZhSpan[] {
   return [...spans.values()].sort((a, b) => b.chars.length - a.chars.length);
 }
 
+export interface MatchOptions {
+  /**
+   * Words matched first (e.g. the words shown to the reader), so a longer
+   * span around them cannot take their place.
+   */
+  prefer?: (word: string) => boolean;
+  /**
+   * Words of two or more characters that stand on their own in the book
+   * (古月, 方源, 族长, 修行): see isCompound.
+   */
+  isFreeWord?: (word: string) => boolean;
+}
+
+/**
+ * A four-character span made of two free words — 古月方源 (古月 + 方源),
+ * 族长古月 (族长 + 古月), 蛊师修行 (蛊师 + 修行) — is two words written next to
+ * each other, not a word. It is never a candidate: its parts are, so a
+ * learner meets 古月 and 方源 wherever they occur, and the span cannot take
+ * syllables from a real word next to it (古月博 in 族长古月博). Idioms
+ * (天罗地网) and names (古月博) are kept: their pieces are not free words.
+ */
+export function isCompound(word: string, isFreeWord: (word: string) => boolean): boolean {
+  const chars = Array.from(word);
+  if (chars.length !== 4) return false;
+  return isFreeWord(chars.slice(0, 2).join('')) && isFreeWord(chars.slice(2).join(''));
+}
+
 /**
  * Match Chinese words of `chinese` to spans of its translation `vietnamese`.
  * Results are non-overlapping on the Vietnamese side and sorted by position.
- *
- * `prefer` (e.g. the words being learned) is matched first, so a word the
- * reader is learning is not swallowed by a longer span around it: with 蛊师
- * preferred, "Cổ sư tu hành" gives 蛊师 + 修行 rather than 蛊师修行.
  */
 export function matchWords(
   chinese: string,
   vietnamese: string,
   index: HanVietIndex,
-  prefer?: (word: string) => boolean,
+  options: MatchOptions = {},
 ): WordMatch[] {
+  const { prefer } = options;
+  // Words being shown count as free words too (before the book's word
+  // statistics exist, and for words just started).
+  const free = (word: string) => Boolean(options.isFreeWord?.(word) || prefer?.(word));
+  // Free words in this sentence, by character range. A candidate may contain
+  // or sit inside one, but not start or end in the middle of one: 长古月博
+  // (cutting 族长 in 族长古月博) is not a word.
+  const sentenceChars = Array.from(chinese);
+  const freeRanges: Array<[number, number]> = [];
+  for (let start = 0; start < sentenceChars.length; start++) {
+    for (let length = 2; length <= MAX_SPAN_CHARS && start + length <= sentenceChars.length; length++) {
+      if (free(sentenceChars.slice(start, start + length).join(''))) freeRanges.push([start, start + length]);
+    }
+  }
+  const cutsFreeWord = (from: number, to: number) => freeRanges.some(([a, b]) =>
+    from < b && to > a && !(from <= a && to >= b) && !(a <= from && b >= to));
+  const isWordSpan = (span: ZhSpan) => {
+    if (isCompound(span.text, free)) return false;
+    if (freeRanges.length === 0 || span.chars.length < 2) return true;
+    // Rejected only if every occurrence cuts a free word.
+    let clean = false;
+    for (let at = 0; at + span.chars.length <= sentenceChars.length && !clean; at++) {
+      if (span.chars.every((char, k) => sentenceChars[at + k] === char) && !cutsFreeWord(at, at + span.chars.length)) clean = true;
+    }
+    return clean;
+  };
   if (!chinese || !vietnamese) return [];
   const syllables = viSyllables(vietnamese);
   if (syllables.length === 0) return [];
@@ -239,7 +288,20 @@ export function matchWords(
     return best;
   };
 
-  const allSpans = chineseSpans(chinese);
+  // A compound is replaced by its two words (the segmenter may keep
+  // 古月方源 as one token, leaving no smaller span to match).
+  const allSpans: ZhSpan[] = [];
+  const seen = new Set<string>();
+  const addSpan = (span: ZhSpan) => {
+    if (seen.has(span.text)) return;
+    seen.add(span.text);
+    allSpans.push(span);
+  };
+  for (const span of chineseSpans(chinese)) {
+    if (isWordSpan(span)) addSpan(span);
+    else if (isCompound(span.text, free)) for (const chars of [span.chars.slice(0, 2), span.chars.slice(2)]) addSpan({ text: chars.join(''), chars });
+  }
+  allSpans.sort((x, y) => y.chars.length - x.chars.length);
   // A word may occur several times in the source sentence (你…你); it can then
   // claim as many Vietnamese spans.
   const remaining = new Map<string, number>();
@@ -267,7 +329,7 @@ export function matchWords(
   // 但是 must not claim a "là" elsewhere in the sentence).
   const preferred = prefer
     ? [
-        ...characterSpans(chinese).filter(span => span.chars.length > 1 && prefer(span.text)),
+        ...characterSpans(chinese).filter(span => span.chars.length > 1 && prefer(span.text) && isWordSpan(span)),
         ...allSpans.filter(span => span.chars.length === 1 && prefer(span.text)),
       ]
     : [];

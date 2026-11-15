@@ -157,6 +157,8 @@ export interface BookWordStats {
   /** [Chinese word, occurrences, most common Vietnamese rendering]. */
   words: Array<[string, number, string]>;
   builtAt: number;
+  /** Counting method (STATS_VERSION in wordStats.ts); older stats are rebuilt. */
+  version?: number;
 }
 
 // === Vocabulary ===

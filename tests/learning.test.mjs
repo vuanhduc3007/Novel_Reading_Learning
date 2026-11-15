@@ -79,3 +79,13 @@ test('a word met in an earlier session shows in Chinese in text read before too'
   assert.equal(store.canWeave('古月', 17, 39, state), false, 'new this session: not in text read before');
   assert.equal(store.canWeave('古月', 17, 41, state), true);
 });
+
+test('a compound is never a word to learn; one known before counts for its parts', () => {
+  const compoundStats = { bookId: 'b', builtAt: 0, words: [['古月方源', 950, ''], ['方源', 900, ''], ['古月', 200, ''], ['他', 100, '']] };
+  const { learning } = store.computeSets(compoundStats, new Map(), 2, new Map([['古月方源', 50], ['古月', 30]]));
+  assert.ok(!learning.has('古月方源'));
+  const progress = new Map([['古月方源', { word: '古月方源', status: 'known', exposures: 30, updatedAt: 0 }]]);
+  const { known, learning: rest } = store.computeSets(compoundStats, progress, 2, null);
+  assert.ok(known.has('古月') && known.has('方源') && !known.has('古月方源'));
+  assert.deepEqual([...rest], ['他']);
+});

@@ -78,7 +78,7 @@ test('a word repeated in the source is woven at each occurrence, parts of a matc
 test('a word being learned is found whatever the browser segmenter does', () => {
   const zh = '蛊师修行需要元石，战斗需要元石，炼蛊需要元石，交易需要元石。';
   const vi = 'Cổ sư tu hành cần nguyên thạch, chiến đấu cần nguyên thạch, luyện cổ cần nguyên thạch, giao dịch cần nguyên thạch.';
-  const preferred = matcher.matchWords(zh, vi, index, word => word === '元石').map(match => `${match.zh}=${match.vi}`);
+  const preferred = matcher.matchWords(zh, vi, index, { prefer: word => word === '元石' }).map(match => `${match.zh}=${match.vi}`);
   assert.equal(preferred.filter(pair => pair === '元石=nguyên thạch').length, 4, preferred.join(', '));
 });
 
@@ -86,7 +86,7 @@ test('words being learned are matched before a longer span around them', () => {
   const zh = '蛊师修行需要元石。';
   const vi = 'Cổ sư tu hành cần nguyên thạch.';
   assert.ok(woven(zh, vi).includes('蛊师修行=Cổ sư tu hành'));
-  const preferred = matcher.matchWords(zh, vi, index, word => word === '蛊师').map(match => `${match.zh}=${match.vi}`);
+  const preferred = matcher.matchWords(zh, vi, index, { prefer: word => word === '蛊师' }).map(match => `${match.zh}=${match.vi}`);
   assert.ok(preferred.includes('蛊师=Cổ sư'), preferred.join(', '));
   assert.ok(preferred.includes('元石=nguyên thạch'));
 });
@@ -94,7 +94,7 @@ test('words being learned are matched before a longer span around them', () => {
 test('a word takes the Vietnamese span at about the same place in the sentence', () => {
   const zh = '人家一个小丫头，服侍了你这么多年，对你的温柔体贴我都一一看在眼里。';
   const vi = 'Người ta là một tiểu nha đầu, hầu hạ ngươi nhiều năm ra sao, dịu dàng săn sóc ngươi ra sao, ta đều thấy hết vào mắt.';
-  const matches = matcher.matchWords(zh, vi, index, word => word === '我' || word === '人');
+  const matches = matcher.matchWords(zh, vi, index, { prefer: word => word === '我' || word === '人' });
   const wo = matches.find(match => match.zh === '我');
   assert.ok(wo, 'matches 我');
   assert.equal(vi.slice(wo.viStart, wo.viStart + 6), 'ta đều');
@@ -103,8 +103,46 @@ test('a word takes the Vietnamese span at about the same place in the sentence',
 
 test('a lexicon word is matched as a whole even if the segmenter splits it', () => {
   // As if the browser had split 人家 into 人 / 家 and 人 were being learned.
-  const matches = matcher.matchWords('人家是小丫头。', 'Người ta là tiểu nha đầu.', index, word => word === '人')
+  const matches = matcher.matchWords('人家是小丫头。', 'Người ta là tiểu nha đầu.', index, { prefer: word => word === '人' })
     .map(match => `${match.zh}=${match.vi}`);
   assert.ok(matches.includes('人家=Người ta'), matches.join(', '));
   assert.ok(!matches.includes('人=Người'));
+});
+
+test('a longer span not shown here does not take the place of words being learned', () => {
+  const zh = '他大声吼道：“古月方源，你怎么能这个样子！';
+  const vi = 'Hắn rống to: “Cổ Nguyệt Phương Nguyên, làm sao ngươi có thể như vậy!';
+  const shown = word => word === '古月' || word === '方源';
+  const matches = matcher.matchWords(zh, vi, index, { prefer: shown }).filter(match => shown(match.zh)).map(match => `${match.zh}=${match.vi}`);
+  assert.deepEqual(matches, ['古月=Cổ Nguyệt', '方源=Phương Nguyên']);
+});
+
+test('a compound of two free words is matched as its two words', () => {
+  const free = new Set(['古月', '方源', '族长', '蛊师', '修行']);
+  const isFreeWord = word => free.has(word);
+  assert.equal(matcher.isCompound('古月方源', isFreeWord), true);
+  assert.equal(matcher.isCompound('天罗地网', isFreeWord), false, 'an idiom whose pieces are not free words');
+  assert.equal(matcher.isCompound('古月博', isFreeWord), false, 'a name is not split');
+  const pairs = (zh, vi) => matcher.matchWords(zh, vi, index, { isFreeWord }).map(match => `${match.zh}=${match.vi}`);
+  assert.deepEqual(pairs('“古月方源！”', '“Cổ Nguyệt Phương Nguyên!”'), ['古月=Cổ Nguyệt', '方源=Phương Nguyên']);
+  // 族长古月 must not cut the name 古月博.
+  const chief = pairs('族长古月博问道。', 'Tộc trưởng Cổ Nguyệt Bác hỏi.');
+  assert.ok(chief.includes('族长=Tộc trưởng') && chief.includes('古月博=Cổ Nguyệt Bác'), chief.join(', '));
+  assert.ok(pairs('蛊师修行需要元石。', 'Cổ sư tu hành cần nguyên thạch.').includes('蛊师=Cổ sư'));
+});
+
+test('word statistics count a compound for its two words, never as a word', async () => {
+  const stats = await vite.ssrLoadModule('/src/features/immersion/wordStats.ts');
+  const counter = new stats.WordCounter();
+  const sentence = (index, chineseText, referenceText) => ({ id: `s${index}`, index, chineseText, referenceText });
+  const lines = [];
+  for (let i = 0; i < 6; i++) lines.push(sentence(lines.length, '古月来了。', 'Cổ Nguyệt đến rồi.'), sentence(lines.length + 1, '方源来了。', 'Phương Nguyên đến rồi.'));
+  for (let i = 0; i < 3; i++) lines.push(sentence(lines.length, '古月方源来了。', 'Cổ Nguyệt Phương Nguyên đến rồi.'));
+  counter.addSentences(lines, index);
+  const result = counter.toStats('b');
+  const count = word => result.words.find(([w]) => w === word)?.[1] ?? 0;
+  assert.equal(count('古月方源'), 0);
+  assert.equal(count('古月'), 9);
+  assert.equal(count('方源'), 9);
+  assert.equal(result.version, stats.STATS_VERSION);
 });

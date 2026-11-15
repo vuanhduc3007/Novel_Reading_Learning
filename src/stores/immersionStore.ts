@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { db } from '../db/database';
 import { loadHanViet } from '../features/immersion/hanVietData';
-import { buildBookWordStats } from '../features/immersion/wordStats';
+import { buildBookWordStats, freeWordsOf, STATS_VERSION } from '../features/immersion/wordStats';
 import { markManyDirty, markSettingsChanged } from '../features/sync/localChanges';
 import { countUpcomingWords } from '../features/immersion/upcomingWords';
 import { currentReadPosition, type ReadingPosition } from '../features/immersion/exposureTracker';
-import type { HanVietData, HanVietIndex, WordMatch } from '../features/immersion/wordMatcher';
+import { isCompound, type HanVietData, type HanVietIndex, type WordMatch } from '../features/immersion/wordMatcher';
 import type { BookWordStats, WordLearningStatus, WordProgress } from '../types';
 
 /**
@@ -61,6 +61,8 @@ interface ImmersionState {
   data: HanVietData | null;
   index: HanVietIndex | null;
   stats: BookWordStats | null;
+  /** Free words of the book (see isCompound), from its word statistics. */
+  freeWords: Set<string>;
   statsBuilding: boolean;
   progress: Map<string, WordProgress>;
   learningSize: number;
@@ -139,17 +141,33 @@ export function computeSets(
   size: number,
   upcoming: Map<string, number> | null = null,
 ) {
+  // Compounds (古月方源 = 古月 + 方源) are never words to learn; one marked
+  // known or started before this rule counts for its parts.
+  const free = freeWordsOf(stats?.words ?? []);
+  const compound = (word: string) => isCompound(word, part => free.has(part));
+  const partsOf = (word: string) => {
+    const chars = Array.from(word);
+    return [chars.slice(0, 2).join(''), chars.slice(2).join('')];
+  };
   const known = new Set<string>();
-  for (const entry of progress.values()) if (entry.status === 'known') known.add(entry.word);
+  for (const entry of progress.values()) {
+    if (entry.status !== 'known') continue;
+    if (!compound(entry.word)) known.add(entry.word);
+    else for (const part of partsOf(entry.word)) if (progress.get(part)?.status !== 'ignored') known.add(part);
+  }
   const learning = new Set<string>();
   const available = (word: string) => {
     const status = progress.get(word)?.status;
-    return status !== 'known' && status !== 'ignored';
+    return status !== 'known' && status !== 'ignored' && !known.has(word) && !compound(word);
   };
   const words = stats?.words ?? [];
   for (const [word] of words) {
     const entry = progress.get(word);
-    if (entry?.status === 'learning' && entry.exposures > 0 && learning.size < size) learning.add(word);
+    if (entry?.status === 'learning' && entry.exposures > 0 && learning.size < size && !compound(word)) learning.add(word);
+  }
+  for (const entry of progress.values()) {
+    if (entry.status !== 'learning' || entry.exposures === 0 || !compound(entry.word)) continue;
+    for (const part of partsOf(entry.word)) if (learning.size < size && available(part)) learning.add(part);
   }
   if (upcoming) {
     const soon = [...upcoming].filter(([, count]) => count >= MIN_OCCURRENCES).sort((a, b) => b[1] - a[1]);
@@ -217,6 +235,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   data: null,
   index: null,
   stats: null,
+  freeWords: new Set(),
   statsBuilding: false,
   progress: new Map(),
   learningSize: readLearningSize(),
@@ -242,8 +261,8 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     ]);
     if (session !== initSession) return;
     const progress = new Map(rows.map(row => [row.word, row]));
-    set({ data, index, progress, metBefore: wordsMetBefore(progress), stats: stats ?? null, ready: true, ...withSets(get, stats ?? null, progress, get().learningSize, get().upcoming) });
-    const stale = !stats || stats.words.length < 200 || Date.now() - stats.builtAt > STATS_MAX_AGE_MS;
+    set({ data, index, progress, metBefore: wordsMetBefore(progress), stats: stats ?? null, freeWords: freeWordsOf(stats?.words ?? []), ready: true, ...withSets(get, stats ?? null, progress, get().learningSize, get().upcoming) });
+    const stale = !stats || stats.version !== STATS_VERSION || stats.words.length < 200 || Date.now() - stats.builtAt > STATS_MAX_AGE_MS;
     if (stale) await get().rebuildStats();
   },
 
@@ -255,7 +274,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     try {
       const stats = await buildBookWordStats(bookId);
       if (session !== initSession || get().bookId !== bookId) return;
-      set({ stats, ...withSets(get, stats, get().progress, get().learningSize, get().upcoming) });
+      set({ stats, freeWords: freeWordsOf(stats.words), ...withSets(get, stats, get().progress, get().learningSize, get().upcoming) });
     } catch (error) {
       console.error('Failed to build word statistics', error);
     } finally {
@@ -346,7 +365,8 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     if (upcoming && chapterIndex >= upcomingFrom && chapterIndex < upcomingFrom + 3) return;
     const session = initSession;
     set({ upcomingFrom: chapterIndex });
-    const counts = await countUpcomingWords(bookId, chapterIndex, index);
+    const free = get().freeWords;
+    const counts = await countUpcomingWords(bookId, chapterIndex, index, word => free.has(word));
     if (session !== initSession || get().bookId !== bookId || get().upcomingFrom !== chapterIndex) return;
     set({ upcoming: counts, ...withSets(get, get().stats, get().progress, get().learningSize, counts) });
   },

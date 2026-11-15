@@ -11,7 +11,12 @@ export const UPCOMING_CHAPTERS = 10;
  * (the current one and the next UPCOMING_CHAPTERS - 1). New words are chosen
  * from these, so a word just introduced keeps coming back right away.
  */
-export async function countUpcomingWords(bookId: string, fromChapter: number, index: HanVietIndex): Promise<Map<string, number>> {
+export async function countUpcomingWords(
+  bookId: string,
+  fromChapter: number,
+  index: HanVietIndex,
+  isFreeWord?: (word: string) => boolean,
+): Promise<Map<string, number>> {
   const chapters = await db.chapters
     .where('[bookId+index]')
     .between([bookId, fromChapter], [bookId, fromChapter + UPCOMING_CHAPTERS - 1], true, true)
@@ -24,7 +29,7 @@ export async function countUpcomingWords(bookId: string, fromChapter: number, in
       .toArray();
     for (const unit of readingUnits(sentences)) {
       if (!unit.vietnamese) continue;
-      for (const match of matchWords(unit.chinese, unit.vietnamese, index)) {
+      for (const match of matchWords(unit.chinese, unit.vietnamese, index, { isFreeWord })) {
         counts.set(match.zh, (counts.get(match.zh) ?? 0) + 1);
       }
     }
