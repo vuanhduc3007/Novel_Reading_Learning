@@ -10,6 +10,10 @@ axios.defaults.adapter = async config => {
     const texts = new URLSearchParams(config.data).getAll('q');
     const primary = url.hostname === 'translate.googleapis.com';
     for (const text of texts) {
+      // Dictionary error cases exercise the MyMemory fallback.
+      if (text.startsWith('dictionary-') || text === 'google-down') {
+        throw Object.assign(new Error('upstream failed'), {response:{status:503}});
+      }
       if (text === 'timeout') throw Object.assign(new Error('timeout'), {code:'ECONNABORTED'});
       if (text === 'network') throw Object.assign(new Error('offline'), {code:'ENOTFOUND'});
       if (text === '429' || text === '503' || text === 'batch-429') {
@@ -20,7 +24,7 @@ axios.defaults.adapter = async config => {
     if (texts.includes('malformed')) return {status:200,statusText:'OK',config,headers:{},data:{bad:true}};
     const data = texts.map(text => text === 'partial-fail' ? '' : texts.length === 1 && text === '你好'
       ? 'Bản dịch thử nghiệm'
-      : `Bản dịch ${text}${primary ? '' : ' (fallback)'}`);
+      : text === '学习' ? 'học tập' : `Bản dịch ${text}${primary ? '' : ' (fallback)'}`);
     return {status:200, statusText:'OK', config, headers:{}, data};
   }
 

@@ -86,6 +86,14 @@ test('real dictionary adapter preserves the response contract',async()=>{
   assert.ok(Number.isFinite(result.fetchedAt));
   assert.ok(!JSON.stringify(result).includes('Mock meaning'));
 });
+test('dictionary uses Google first and MyMemory when Google is down',async()=>{
+  const google=await post('/api/dictionary',{word:'蛊师'});
+  assert.equal(google.status,200);
+  assert.match((await google.json()).meaning,/^Bản dịch 蛊师/);
+  const fallback=await post('/api/dictionary',{word:'google-down'});
+  assert.equal(fallback.status,200);
+  assert.equal((await fallback.json()).meaning,'nghĩa của google-down');
+});
 test('unknown dictionary word has a structured 404',async()=>{
   const r=await post('/api/dictionary',{word:'dictionary-unknown'});
   assert.equal(r.status,404);
@@ -125,7 +133,7 @@ test('upstream 429 / timeout / network / 5xx / malformed mapping',async()=>{
   for(const [text,status,code] of [['429',429,'RATE_LIMIT_EXCEEDED'],['timeout',504,'TRANSLATION_TIMEOUT'],['network',502,'BAD_GATEWAY'],['503',502,'BAD_GATEWAY'],['malformed',502,'BAD_GATEWAY']]) {
     const r=await post('/api/translate',{text});assert.equal(r.status,status);assert.equal((await r.json()).error,code);
   }
-  for(const [word,status,code] of [['dictionary-429',429,'RATE_LIMIT_EXCEEDED'],['dictionary-timeout',504,'DICTIONARY_TIMEOUT'],['dictionary-network',502,'BAD_GATEWAY'],['dictionary-503',502,'BAD_GATEWAY'],['dictionary-malformed',502,'BAD_GATEWAY']]) {
+  for(const [word,status,code] of [['dictionary-timeout',504,'DICTIONARY_TIMEOUT'],['dictionary-network',502,'BAD_GATEWAY'],['dictionary-503',502,'BAD_GATEWAY'],['dictionary-malformed',502,'BAD_GATEWAY'],['dictionary-429',429,'RATE_LIMIT_EXCEEDED']]) {
     const r=await post('/api/dictionary',{word});assert.equal(r.status,status);assert.equal((await r.json()).error,code);
   }
 });

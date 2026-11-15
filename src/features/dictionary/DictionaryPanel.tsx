@@ -7,7 +7,7 @@ import { Skeleton } from '../../components';
 import styles from './DictionaryPanel.module.css';
 
 export function DictionaryPanel() {
-  const { isPanelOpen, closePanel, panelState, panelWord, panelResult } = useDictionaryStore();
+  const { isPanelOpen, closePanel, panelState, panelWord, panelResult, handleWordClick } = useDictionaryStore();
   const { bookId, bookTitle, currentSentenceId } = useReaderStore();
   const { knownWords, addWord, removeWord } = useVocabularyStore();
   const isKnown = panelWord ? knownWords.has(panelWord) : false;
@@ -40,7 +40,7 @@ export function DictionaryPanel() {
           {panelState === 'error' && (
             <div className={styles.errorState}>
               <p>Không thể tải từ điển lúc này.</p>
-              <button className={styles.retryBtn}>Thử lại</button>
+              <button className={styles.retryBtn} onClick={() => panelWord && void handleWordClick(panelWord)}>Thử lại</button>
             </div>
           )}
 
