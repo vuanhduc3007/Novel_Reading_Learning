@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { filterLearnedReadings } from './hanviet-phonology.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [unihanDir, pairsPath] = process.argv.slice(2);
@@ -72,6 +73,7 @@ delete lexiconSource._comment;
 let singles = '';
 const lexicon = {};
 const report = [];
+const learnedPairs = new Set(); // `${char}|${reading}` learned from the corpus
 
 if (pairsPath) {
   const pairs = JSON.parse(fs.readFileSync(pairsPath, 'utf8'));
@@ -127,6 +129,7 @@ if (pairsPath) {
         const wordTypes = voteWords.get(`${char}|${form}`)?.size ?? 0;
         if (count >= 8 && count / total >= 0.4 && wordTypes >= 2 && !readings.get(char)?.some(r => syllableKey(r) === syllableKey(form))) {
           addReading(char, form);
+          learnedPairs.add(`${char}|${form.normalize('NFC').toLowerCase()}`);
           learned++;
           report.push(`learn ${char} → ${form} (${count}/${total}, ${wordTypes} words)`);
         }
@@ -199,6 +202,12 @@ const output = {
   single: singles,
   lexicon,
 };
+// 3. Learned readings that are Vietnamese translations rather than Hán-Việt
+// (事 → "trên", 是 → "là") are dropped or moved to the lexicon.
+const filtered = filterLearnedReadings(output, (char, reading) => learnedPairs.has(`${char}|${reading}`));
+report.push(...filtered.toLexicon.map(([char, reading]) => `lexicon ${char} → ${reading} (not Hán-Việt)`));
+report.push(...filtered.dropped.map(([char, reading]) => `drop ${char} → ${reading} (not Hán-Việt)`));
+console.log(`learned readings: kept ${filtered.kept.length}, moved to lexicon ${filtered.toLexicon.length}, dropped ${filtered.dropped.length}`);
 const outPath = path.join(root, 'src/data/hanviet.json');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(output));

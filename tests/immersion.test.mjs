@@ -146,3 +146,15 @@ test('word statistics count a compound for its two words, never as a word', asyn
   assert.equal(count('方源'), 9);
   assert.equal(result.version, stats.STATS_VERSION);
 });
+
+test('a single character being learned is found outside words, whatever the segmenter does', () => {
+  // Chrome on a desktop keeps 我知道 as one token.
+  const zh = '是，我知道你很失落。';
+  const vi = 'Phải, ta biết ngươi rất hụt hẫng.';
+  const known = new Set(['我', '你']);
+  const pairs = matcher.matchWords(zh, vi, index, { prefer: word => known.has(word) }).map(match => `${match.zh}=${match.vi}`);
+  assert.ok(pairs.includes('我=ta'), pairs.join(', '));
+  // 是 inside the word 但是 is not 是 on its own.
+  const both = matcher.matchWords('但是你是谁？', 'Nhưng ngươi là ai?', index, { prefer: word => word === '是', isFreeWord: word => word === '但是' });
+  assert.equal(both.filter(match => match.zh === '是').length, 1);
+});

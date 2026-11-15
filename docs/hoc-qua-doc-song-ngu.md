@@ -48,7 +48,12 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
 
 - **Từ nào được cấy:** app tìm trong từng cặp câu (gốc ↔ bản dịch) xem từ Trung nào tương ứng với cụm Việt nào:
   - **Từ Hán-Việt** (chính xác nhất): mỗi chữ Hán phải khớp đúng âm Hán-Việt của âm tiết Việt ở cùng vị trí. Ví dụ 方源 ↔ "Phương Nguyên", 春秋蝉 ↔ "Xuân Thu Thiền", 天罗地网 ↔ "thiên la địa võng", 蛊师 ↔ "cổ sư". Người Việt học nhóm từ này dễ nhất: nghe đã quen, chỉ cần nhận mặt chữ.
-  - **Từ thuần Việt hay gặp:** 你 ↔ "ngươi", 他 ↔ "hắn", 杀 ↔ "giết"… lấy từ một danh sách nhỏ. Mỗi mục đã được kiểm chứng trên cả bộ truyện.
+  - **Từ thuần Việt hay gặp:** 你 ↔ "ngươi", 他 ↔ "hắn", 杀 ↔ "giết", 如此 ↔ "như vậy", 能够 ↔ "có thể"… lấy từ một danh sách (`scripts/hanviet-lexicon.json`). Mỗi mục đã được kiểm chứng trên cả bộ truyện. Bản dịch thuần Việt chỉ được dùng cho **cả từ**, không dùng như âm của từng chữ để ghép thành cụm khác.
+- **Từ ghép không phải từ:** "từ độc lập" là từ 2 chữ trở lên xuất hiện đứng riêng ít nhất 5 lần trong sách (古月, 方源, 族长, 修行). Áp dụng hai quy tắc:
+  - Cụm 4 chữ gồm hai từ độc lập (古月方源, 族长古月, 蛊师修行, 一块元石) là hai từ đứng cạnh nhau. App không ghép, không đếm và không đưa nó vào danh sách học; chỉ hai từ thành phần được tính. Từ ghép đã thuộc hoặc đang học từ trước được chuyển sang hai từ thành phần.
+  - Một cụm không được cắt ngang một từ độc lập. Ví dụ 长古月博 cắt đôi 族长 trong 族长古月博, nên tên 古月博 được giữ nguyên.
+  - Thành ngữ (天罗地网) và tên 3 chữ (古月博) không bị tách, vì các mảnh của chúng không đứng riêng.
+- **Ưu tiên từ đang hiện:** khi ghép, các từ đang học hoặc đã thuộc được tìm trước (theo từng chữ, không phụ thuộc bộ tách từ của trình duyệt). Vì vậy một cụm dài hơn không thể chiếm chỗ của chúng.
 - **Chọn từ mới theo đoạn sắp đọc:** khi có chỗ trống, app đếm tần suất từ trong khoảng 10 chương tới (tính từ chương đang đọc) và chọn từ xuất hiện dày nhất ở đó. Nếu không đủ từ thì lấy thêm theo tần suất cả cuốn. Nhờ vậy từ vừa học được gặp lại liên tục ngay sau đó.
 - **Mỗi lần chỉ học vài từ** (5/10/20/40, mặc định 10). Từ đang học dở luôn được giữ lại; khi thuộc một từ, từ tiếp theo xuất hiện.
 - **Từ mới không hiện trong phần đã đọc:**
@@ -65,7 +70,8 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
 - **Bấm vào một câu** để xem câu gốc tiếng Trung ngay bên dưới, với các từ đang học được tô màu. Mỗi từ trong câu gốc vẫn tra được bằng từ điển.
 - **Dữ liệu Hán-Việt** (`src/data/hanviet.json`, khoảng 140 KB, chỉ tải khi cần) được dựng bằng `scripts/build-hanviet.mjs`:
   - Nguồn chính: trường `kVietnamese` của Unicode Unihan, có chuyển âm từ chữ phồn thể sang chữ giản thể.
-  - Unihan thiếu nhiều âm, ví dụ 源 chỉ có "nguồn", 春 không có âm nào. Script học thêm từ các cặp câu đã căn chỉnh: nếu các chữ còn lại của một từ đã khớp âm, âm tiết ở vị trí còn lại là âm của chữ đó. Âm chỉ được nhận khi xuất hiện trong ít nhất hai từ khác nhau. Kết quả học thêm được 393 âm.
+  - Unihan thiếu nhiều âm, ví dụ 源 chỉ có "nguồn", 春 không có âm nào. Script học thêm từ các cặp câu đã căn chỉnh: nếu các chữ còn lại của một từ đã khớp âm, âm tiết ở vị trí còn lại là âm của chữ đó. Âm chỉ được nhận khi xuất hiện trong ít nhất hai từ khác nhau.
+  - Cách học này cũng nhận nhầm cả bản dịch thuần Việt làm âm (事 → "trên", 是 → "là", 母 → "phụ"). Những âm đó tạo ra cụm ghép sai như 事实 ↔ "trên thực". Bước lọc (`scripts/hanviet-phonology.mjs`) dựa vào **quy luật tương ứng âm Hán-Việt – tiếng Phổ thông** (phụ âm đầu, vần, thanh điệu: 年 nián → niên, 时 shí → thời). Quy luật này được học từ các âm có trong từ điển. Âm học thêm nào không theo quy luật đó (một → 一 yī, hai → 两 liǎng) sẽ bị bỏ khỏi danh sách âm. Nếu chữ đó được ghép đứng riêng, bản dịch được chuyển sang danh sách từ thuần Việt. Hiện giữ lại 306 âm, chuyển 18, bỏ 110. Với dữ liệu sẵn có, chạy `node scripts/filter-learned-readings.mjs <thư mục Unihan>`.
 - **Sách nhập bằng phiên bản cũ** không có thông tin đoạn văn. Khi ghép bản dịch, app ghép theo câu (vẫn đạt 2333/2344 chương), rồi **chia đoạn theo bản Việt**, nên không cần nhập lại sách.
 - Nếu sách chưa có bản dịch người, đầu trang đọc có banner "Chọn file bản dịch" để ghép ngay tại đó.
 

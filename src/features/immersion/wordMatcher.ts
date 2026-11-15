@@ -324,19 +324,37 @@ export function matchWords(
     }
   };
 
-  // Preferred words first: multi-character ones searched by characters,
-  // single characters only where the segmenter has them as a word (是 inside
-  // 但是 must not claim a "là" elsewhere in the sentence).
-  const preferred = prefer
-    ? [
-        ...characterSpans(chinese).filter(span => span.chars.length > 1 && prefer(span.text) && isWordSpan(span)),
-        ...allSpans.filter(span => span.chars.length === 1 && prefer(span.text)),
-      ]
-    : [];
   // Curated multi-character lexicon words (人家, 我们) come first, found by
   // characters on every device, so 人 alone cannot take the "người" of
   // 人家 ↔ "người ta" where a browser splits 人家 into 人/家.
   const lexiconWords = characterSpans(chinese).filter(span => span.chars.length > 1 && index.lexiconPhrases(span.text));
+
+  // Preferred words next, all found by characters, so they do not depend on
+  // where the browser's segmenter puts boundaries (Chrome on a desktop keeps
+  // 我知道 as one token, Android splits 需要元石 as 需/要元/石). A single
+  // character only counts where it is not part of a word: 我 in 我知道 (知道 is
+  // the word) yes, 是 in 但是 no.
+  const wordRanges: Array<[number, number]> = [...freeRanges];
+  for (const span of lexiconWords) {
+    for (let at = 0; at + span.chars.length <= sentenceChars.length; at++) {
+      if (span.chars.every((char, k) => sentenceChars[at + k] === char)) wordRanges.push([at, at + span.chars.length]);
+    }
+  }
+  const restrictToFreeStanding = (char: string) => {
+    const positions: number[] = [];
+    sentenceChars.forEach((current, at) => {
+      if (current === char && !wordRanges.some(([a, b]) => a <= at && at < b)) positions.push((at + 0.5) / chineseLength);
+    });
+    unclaimed.set(char, positions);
+    remaining.set(char, positions.length);
+    return positions.length > 0;
+  };
+  const preferred = prefer
+    ? [
+        ...characterSpans(chinese).filter(span => span.chars.length > 1 && prefer(span.text) && isWordSpan(span)),
+        ...characterSpans(chinese).filter(span => span.chars.length === 1 && prefer(span.text) && restrictToFreeStanding(span.text)),
+      ]
+    : [];
   const passes = prefer ? [lexiconWords, preferred, allSpans] : [lexiconWords, allSpans];
   for (const spans of passes) {
     // 1. Hán-Việt cognates, longest Chinese span first.
