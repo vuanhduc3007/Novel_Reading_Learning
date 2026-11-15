@@ -24,7 +24,7 @@ const stats = { bookId: 'b', builtAt: 0, words: [['方源', 900, ''], ['他', 50
 
 test('new words come from the upcoming chapters first; started words stay', () => {
   const progress = new Map([['他', { word: '他', status: 'learning', exposures: 3, updatedAt: 0 }]]);
-  const upcoming = new Map([['古月', 40], ['蛊', 12], ['方源', 2]]);
+  const upcoming = new Map([['古月', 40], ['蛊', 12], ['方源', 2], ['他', 1]]);
   const { learning } = store.computeSets(stats, progress, 3, upcoming);
   assert.deepEqual([...learning], ['他', '古月', '蛊'], 'started 他, then densest upcoming; 方源 is rare ahead');
   const { learning: whole } = store.computeSets(stats, new Map(), 2, null);
@@ -88,4 +88,19 @@ test('a compound is never a word to learn; one known before counts for its parts
   const { known, learning: rest } = store.computeSets(compoundStats, progress, 2, null);
   assert.ok(known.has('古月') && known.has('方源') && !known.has('古月方源'));
   assert.deepEqual([...rest], ['他']);
+});
+
+test('only words still shown with their meaning take a slot; rare started words wait', () => {
+  const words = { bookId: 'b', builtAt: 0, words: [['方源', 900, ''], ['他', 500, ''], ['蛊', 300, ''], ['古月', 200, ''], ['学堂', 100, '']] };
+  const progress = new Map([
+    // Being recalled (past the hint): stays, but frees its slot.
+    ['方源', { word: '方源', status: 'learning', exposures: store.HINT_EXPOSURES + 2, updatedAt: 0 }],
+    // Started with its hint, but not in the chapters ahead: waits.
+    ['学堂', { word: '学堂', status: 'learning', exposures: 2, updatedAt: 0 }],
+  ]);
+  const upcoming = new Map([['他', 30], ['蛊', 20], ['古月', 10], ['方源', 5]]);
+  const { learning } = store.computeSets(words, progress, 2, upcoming);
+  assert.ok(learning.has('方源'), 'a word being recalled stays in Chinese');
+  assert.ok(!learning.has('学堂'), 'a rare started word does not hold a slot');
+  assert.deepEqual([...learning].filter(word => word !== '方源'), ['他', '蛊'], 'both slots go to new words ahead');
 });

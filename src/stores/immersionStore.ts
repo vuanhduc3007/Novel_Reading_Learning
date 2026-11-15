@@ -21,8 +21,9 @@ import type { BookWordStats, WordLearningStatus, WordProgress } from '../types';
  *  - after HINT_EXPOSURES encounters without it: the reader must recall the
  *    meaning (tap to peek; peeking brings the hint back for a while),
  *  - known after RECALL_STREAK encounters in a row recalled without peeking
- *    (or when the learner says so); known words stay in Chinese everywhere
- *    and a new word takes the free slot.
+ *    (or when the learner says so); known words stay in Chinese everywhere.
+ * The learning size limits only the words still shown with their meaning: a
+ * word being recalled frees its slot, so new words keep coming.
  * Over time the text turns more and more Chinese at the learner's own pace.
  */
 
@@ -182,25 +183,46 @@ export function computeSets(
     return status !== 'known' && status !== 'ignored' && !known.has(word) && !compound(word);
   };
   const words = stats?.words ?? [];
-  for (const [word] of words) {
-    const entry = progress.get(word);
-    if (entry?.status === 'learning' && entry.exposures > 0 && learning.size < size && !compound(word)) learning.add(word);
-  }
+  const inBook = new Set(words.map(([word]) => word));
+  // `size` limits the new words, those still shown with their meaning (green).
+  // A word past that stage stays in Chinese until it is known but no longer
+  // takes a slot, so new words keep coming while older ones are being
+  // recalled.
+  const withHint = (word: string) => (progress.get(word)?.exposures ?? 0) < HINT_EXPOSURES;
+  // A started word still with its hint keeps its slot only while it occurs in
+  // the chapters ahead; otherwise rare words would fill every slot. Its
+  // progress is kept and it comes back when it occurs again.
+  const ahead = (word: string) => (upcoming ? (upcoming.get(word) ?? 0) > 0 : inBook.has(word));
+  let slots = 0;
+  const keepStarted = (word: string) => {
+    if (learning.has(word) || !available(word)) return;
+    if (!withHint(word)) learning.add(word);
+    else if (ahead(word)) {
+      learning.add(word);
+      slots++;
+    }
+  };
   for (const entry of progress.values()) {
-    if (entry.status !== 'learning' || entry.exposures === 0 || !compound(entry.word)) continue;
-    for (const part of partsOf(entry.word)) if (learning.size < size && available(part)) learning.add(part);
+    if (entry.status !== 'learning' || entry.exposures === 0) continue;
+    if (!compound(entry.word)) keepStarted(entry.word);
+    else for (const part of partsOf(entry.word)) keepStarted(part);
   }
+  const addNew = (word: string) => {
+    if (learning.has(word) || !available(word)) return;
+    learning.add(word);
+    slots++;
+  };
   if (upcoming) {
     const soon = [...upcoming].filter(([, count]) => count >= MIN_OCCURRENCES).sort((a, b) => b[1] - a[1]);
     for (const [word] of soon) {
-      if (learning.size >= size) break;
-      if (available(word)) learning.add(word);
+      if (slots >= size) break;
+      addNew(word);
     }
   }
   for (const [word, count] of words) {
-    if (learning.size >= size) break;
+    if (slots >= size) break;
     if (count < MIN_OCCURRENCES) break;
-    if (available(word)) learning.add(word);
+    addNew(word);
   }
   return { known, learning };
 }

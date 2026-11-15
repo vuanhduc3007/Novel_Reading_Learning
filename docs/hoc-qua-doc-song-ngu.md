@@ -55,7 +55,10 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
   - Thành ngữ (天罗地网) và tên 3 chữ (古月博) không bị tách, vì các mảnh của chúng không đứng riêng.
 - **Ưu tiên từ đang hiện:** khi ghép, các từ đang học hoặc đã thuộc được tìm trước (theo từng chữ, không phụ thuộc bộ tách từ của trình duyệt). Vì vậy một cụm dài hơn không thể chiếm chỗ của chúng.
 - **Chọn từ mới theo đoạn sắp đọc:** khi có chỗ trống, app đếm tần suất từ trong khoảng 10 chương tới (tính từ chương đang đọc) và chọn từ xuất hiện dày nhất ở đó. Nếu không đủ từ thì lấy thêm theo tần suất cả cuốn. Nhờ vậy từ vừa học được gặp lại liên tục ngay sau đó.
-- **Mỗi lần chỉ học vài từ** (5/10/20/40, mặc định 10). Từ đang học dở luôn được giữ lại; khi thuộc một từ, từ tiếp theo xuất hiện.
+- **Mỗi lần chỉ học vài từ mới** (5/10/20/40, mặc định 10). Con số này chỉ tính các từ **còn hiện nghĩa** (từ mới, màu xanh):
+  - Khi một từ đã qua giai đoạn hiện nghĩa (đang tự nhớ), nó vẫn hiện chữ Hán cho tới khi thuộc, nhưng nhường chỗ ngay cho một từ mới. Nhờ vậy từ mới không bị chặn trong lúc các từ cũ đang được ôn.
+  - Một từ đã bắt đầu học mà không xuất hiện trong 10 chương tới thì tạm nhường chỗ. Tiến độ của từ đó vẫn được giữ, và nó quay lại khi xuất hiện trở lại.
+- **Tự đánh dấu đã thuộc:** bấm một từ trong câu gốc tiếng Trung rồi bấm "Đã thuộc – hiện chữ Hán". Nếu app không tự tìm được chữ Việt tương ứng trong câu (ví dụ 担心 ↔ "lo lắng" không phải Hán-Việt), bảng tra từ hiện câu tiếng Việt để người đọc chọn chữ đầu và chữ cuối. Cặp từ này được dùng ở cả cuốn sách và đồng bộ theo cài đặt.
 - **Từ mới không hiện trong phần đã đọc:**
   - Phần đã đọc ở các lần trước (tính tới mốc lúc mở sách) chỉ hiện chữ Hán cho từ đã thuộc.
   - Từ mới được thêm giữa chừng chỉ xuất hiện từ chỗ đang đọc trở đi.
