@@ -148,18 +148,42 @@ const ImmersionSentence = memo(({ chapterIndex, unit, matches, showingOriginal, 
 });
 ImmersionSentence.displayName = 'ImmersionSentence';
 
+/**
+ * The Chinese sentence. Words woven into the Vietnamese (being learned or
+ * known) are marked, located by characters so the marking does not depend on
+ * how the browser segments the sentence.
+ */
 function Original({ unit, matches }: { unit: ReadingUnit; matches: WordMatch[] }) {
-  const highlighted = useMemo(() => new Set(matches.map(match => match.zh)), [matches]);
-  const tokens = useMemo(() => tokenize(unit.chinese), [unit.chinese]);
+  const parts = useMemo(() => {
+    const chars = Array.from(unit.chinese);
+    const marked = new Array<boolean>(chars.length).fill(false);
+    const result: Array<{ text: string; woven: boolean }> = [];
+    for (const word of new Set(matches.map(match => match.zh))) {
+      const target = Array.from(word);
+      for (let at = 0; at + target.length <= chars.length; at++) {
+        if (target.every((char, k) => chars[at + k] === char)) {
+          for (let k = 0; k < target.length; k++) marked[at + k] = true;
+        }
+      }
+    }
+    chars.forEach((char, at) => {
+      const last = result[result.length - 1];
+      if (last && last.woven === marked[at]) last.text += char;
+      else result.push({ text: char, woven: marked[at]! });
+    });
+    return result;
+  }, [unit.chinese, matches]);
   return (
     <p className={styles.original}>
-      {tokens.map((token, index) =>
-        token.isWord ? (
-          <span key={index} className={highlighted.has(token.text) ? styles.originalHighlight : undefined}>
-            <WordToken word={token.text} />
-          </span>
-        ) : (
-          <span key={index}>{token.text}</span>
+      {parts.map((part, partIndex) =>
+        tokenize(part.text).map((token, index) =>
+          token.isWord ? (
+            <span key={`${partIndex}-${index}`} className={part.woven ? styles.originalHighlight : undefined}>
+              <WordToken word={token.text} />
+            </span>
+          ) : (
+            <span key={`${partIndex}-${index}`}>{token.text}</span>
+          ),
         ),
       )}
     </p>
@@ -184,16 +208,6 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
   const [openOriginals, setOpenOriginals] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => readingUnits(sentences), [sentences]);
-  // Every match, for highlighting the original sentence.
-  const allMatches = useMemo(() => {
-    const result = new Map<string, WordMatch[]>();
-    if (!index) return result;
-    for (const unit of units) {
-      if (unit.vietnamese) result.set(unit.sentence.id, matchWords(unit.chinese, unit.vietnamese, index));
-    }
-    return result;
-  }, [units, index]);
-
   // What is woven in. Words being learned or known are matched first, so a
   // longer span around them (蛊师修行) does not hide them. Known words and words
   // met in earlier sessions are woven in everywhere; words new in this
@@ -242,7 +256,7 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
               ))}
             </p>
             {opened.map(unit => (
-              <Original key={unit.sentence.id} unit={unit} matches={allMatches.get(unit.sentence.id) ?? []} />
+              <Original key={unit.sentence.id} unit={unit} matches={shownMatches.get(unit.sentence.id) ?? NO_MATCHES} />
             ))}
           </div>
         );

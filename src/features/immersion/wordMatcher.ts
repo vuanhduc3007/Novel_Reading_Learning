@@ -195,14 +195,48 @@ export function matchWords(
     matches.push({ zh, viStart, viEnd, vi: vietnamese.slice(viStart, viEnd), kind });
   };
 
-  const findSequence = (keys: Array<Set<string>>): number => {
+  // Where each Chinese word occurs, as a fraction of the sentence, so that a
+  // word is given the Vietnamese span at about the same place: in
+  // 人家…我都看在眼里 ↔ "Người ta … ta đều thấy", 我 takes the second "ta".
+  const chineseLength = Array.from(chinese).length;
+  const unclaimed = new Map<string, number[]>();
+  const positionsOf = (text: string): number[] => {
+    let list = unclaimed.get(text);
+    if (!list) {
+      list = [];
+      const chars = Array.from(chinese);
+      const word = Array.from(text);
+      for (let at = 0; at + word.length <= chars.length; at++) {
+        if (word.every((char, k) => chars[at + k] === char)) list.push((at + word.length / 2) / chineseLength);
+      }
+      unclaimed.set(text, list);
+    }
+    return list;
+  };
+
+  /** The free Vietnamese span for `text` closest to an unclaimed occurrence of it. */
+  const findSequence = (text: string, keys: Array<Set<string>>): number => {
+    const positions = positionsOf(text);
+    let best = -1;
+    let bestDistance = Infinity;
+    let bestPosition = -1;
     outer: for (let from = 0; from + keys.length <= syllables.length; from++) {
       for (let k = 0; k < keys.length; k++) {
         if (used[from + k] || !keys[k]!.has(syllables[from + k]!.key)) continue outer;
       }
-      return from;
+      const at = (from + keys.length / 2) / syllables.length;
+      positions.forEach((position, slot) => {
+        const distance = Math.abs(at - position);
+        if (distance < bestDistance) {
+          best = from;
+          bestDistance = distance;
+          bestPosition = slot;
+        }
+      });
+      if (positions.length === 0 && best < 0) best = from;
     }
-    return -1;
+    if (bestPosition >= 0) positions.splice(bestPosition, 1);
+    return best;
   };
 
   const allSpans = chineseSpans(chinese);
@@ -237,7 +271,11 @@ export function matchWords(
         ...allSpans.filter(span => span.chars.length === 1 && prefer(span.text)),
       ]
     : [];
-  const passes = prefer ? [preferred, allSpans] : [allSpans];
+  // Curated multi-character lexicon words (人家, 我们) come first, found by
+  // characters on every device, so 人 alone cannot take the "người" of
+  // 人家 ↔ "người ta" where a browser splits 人家 into 人/家.
+  const lexiconWords = characterSpans(chinese).filter(span => span.chars.length > 1 && index.lexiconPhrases(span.text));
+  const passes = prefer ? [lexiconWords, preferred, allSpans] : [lexiconWords, allSpans];
   for (const spans of passes) {
     // 1. Hán-Việt cognates, longest Chinese span first.
     for (const span of spans) {
@@ -245,7 +283,7 @@ export function matchWords(
       const keys = span.chars.map(char => index.readingsOf(char));
       if (keys.some(set => !set)) continue;
       while (occurrences(span.text) > 0) {
-        const from = findSequence(keys as Array<Set<string>>);
+        const from = findSequence(span.text, keys as Array<Set<string>>);
         if (from < 0) break;
         claim(span.text, from, span.chars.length, 'hanviet');
         consume(span.text);
@@ -258,7 +296,7 @@ export function matchWords(
       if (!phrases) continue;
       for (const phrase of phrases) {
         while (occurrences(span.text) > 0) {
-          const from = findSequence(phrase.map(key => new Set([key])));
+          const from = findSequence(span.text, phrase.map(key => new Set([key])));
           if (from < 0) break;
           claim(span.text, from, phrase.length, 'lexicon');
           consume(span.text);

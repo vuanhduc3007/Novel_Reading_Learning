@@ -90,3 +90,21 @@ test('words being learned are matched before a longer span around them', () => {
   assert.ok(preferred.includes('蛊师=Cổ sư'), preferred.join(', '));
   assert.ok(preferred.includes('元石=nguyên thạch'));
 });
+
+test('a word takes the Vietnamese span at about the same place in the sentence', () => {
+  const zh = '人家一个小丫头，服侍了你这么多年，对你的温柔体贴我都一一看在眼里。';
+  const vi = 'Người ta là một tiểu nha đầu, hầu hạ ngươi nhiều năm ra sao, dịu dàng săn sóc ngươi ra sao, ta đều thấy hết vào mắt.';
+  const matches = matcher.matchWords(zh, vi, index, word => word === '我' || word === '人');
+  const wo = matches.find(match => match.zh === '我');
+  assert.ok(wo, 'matches 我');
+  assert.equal(vi.slice(wo.viStart, wo.viStart + 6), 'ta đều');
+  assert.ok(woven(zh, vi).includes('人家=Người ta'), woven(zh, vi).join(', '));
+});
+
+test('a lexicon word is matched as a whole even if the segmenter splits it', () => {
+  // As if the browser had split 人家 into 人 / 家 and 人 were being learned.
+  const matches = matcher.matchWords('人家是小丫头。', 'Người ta là tiểu nha đầu.', index, word => word === '人')
+    .map(match => `${match.zh}=${match.vi}`);
+  assert.ok(matches.includes('人家=Người ta'), matches.join(', '));
+  assert.ok(!matches.includes('人=Người'));
+});
