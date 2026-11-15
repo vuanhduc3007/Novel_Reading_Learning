@@ -180,6 +180,7 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
   const known = useImmersionStore(s => s.known);
   const sessionStart = useImmersionStore(s => s.sessionStart);
   const visibleFrom = useImmersionStore(s => s.visibleFrom);
+  const metBefore = useImmersionStore(s => s.metBefore);
   const [openOriginals, setOpenOriginals] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => readingUnits(sentences), [sentences]);
@@ -192,7 +193,8 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
     return result;
   }, [units, index]);
 
-  // Known words are woven in everywhere. Words being learned only in text
+  // Known words and words met in earlier sessions are woven in everywhere.
+  // Words new in this session only in text
   // not read before this session, and only from where each word was
   // introduced: new words never show up in text already read.
   const shownMatches = useMemo(() => {
@@ -201,10 +203,10 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
     for (const [sentenceId, matches] of allMatches) {
       const sentence = positionOf.get(sentenceId) ?? 0;
       result.set(sentenceId, matches.filter(match =>
-        canWeave(match.zh, chapterIndex, sentence, { known, learning, visibleFrom, sessionStart })));
+        canWeave(match.zh, chapterIndex, sentence, { known, learning, visibleFrom, sessionStart, metBefore })));
     }
     return result;
-  }, [allMatches, units, learning, known, visibleFrom, sessionStart, chapterIndex]);
+  }, [allMatches, units, learning, known, visibleFrom, sessionStart, metBefore, chapterIndex]);
 
   const paragraphs = useMemo(() => groupParagraphs(units), [units]);
 

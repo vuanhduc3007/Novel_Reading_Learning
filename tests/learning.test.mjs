@@ -66,3 +66,16 @@ test('learning words never appear in text read before; known words always do', (
   assert.equal(store.canWeave('古月', 6, 4, state), true);
   assert.equal(store.canWeave('蛊', 9, 9, state), false, 'not being learned');
 });
+
+test('a word met in an earlier session shows in Chinese in text read before too', () => {
+  const state = {
+    known: new Set(),
+    learning: new Set(['元石', '古月']),
+    sessionStart: { chapter: 17, sentence: 40 },
+    visibleFrom: new Map(),
+    metBefore: new Set(['元石']),
+  };
+  assert.equal(store.canWeave('元石', 17, 39, state), true, 'met before: everywhere');
+  assert.equal(store.canWeave('古月', 17, 39, state), false, 'new this session: not in text read before');
+  assert.equal(store.canWeave('古月', 17, 41, state), true);
+});

@@ -76,6 +76,8 @@ interface ImmersionState {
   sessionStart: ReadingPosition | null;
   /** Learning words introduced during this session, visible only after this point. */
   visibleFrom: Map<string, ReadingPosition>;
+  /** Words met (seen woven in) before this session: shown everywhere, like known words. */
+  metBefore: Set<string>;
 
   init: (bookId: string) => Promise<void>;
   /** The reader is now in this chapter: refresh the upcoming-word counts if needed. */
@@ -95,6 +97,17 @@ interface ImmersionState {
 }
 
 let initSession = 0;
+// Words whose first encounter happened in this reading session: they stay
+// limited to text after where they were introduced, even after a reload.
+let firstMetThisSession = new Set<string>();
+
+function wordsMetBefore(progress: Map<string, WordProgress>): Set<string> {
+  const met = new Set<string>();
+  for (const entry of progress.values()) {
+    if (entry.exposures > 0 && !firstMetThisSession.has(entry.word)) met.add(entry.word);
+  }
+  return met;
+}
 let pendingWrites = new Map<string, WordProgress>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -154,18 +167,21 @@ export function computeSets(
 }
 
 /**
- * Whether `word` is shown in Chinese at (chapter, sentence). Known words:
- * everywhere. Words being learned: only in text not read before this reading
- * session, and only from the position where the word was introduced.
+ * Whether `word` is shown in Chinese at (chapter, sentence). Known words and
+ * words already met in earlier sessions: everywhere, so the same word never
+ * shows in Chinese in one sentence and in Vietnamese in the one above. Words
+ * new in this session: only in text not read before, and only from the
+ * position where the word was introduced.
  */
 export function canWeave(
   word: string,
   chapter: number,
   sentence: number,
-  state: Pick<ImmersionState, 'known' | 'learning' | 'visibleFrom' | 'sessionStart'>,
+  state: Pick<ImmersionState, 'known' | 'learning' | 'visibleFrom' | 'sessionStart'> & { metBefore?: Set<string> },
 ): boolean {
   if (state.known.has(word)) return true;
   if (!state.learning.has(word)) return false;
+  if (state.metBefore?.has(word)) return true;
   const from = state.visibleFrom.get(word) ?? state.sessionStart;
   return !from || chapter > from.chapter || (chapter === from.chapter && sentence > from.sentence);
 }
@@ -211,6 +227,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   upcomingFrom: -1,
   sessionStart: null,
   visibleFrom: new Map(),
+  metBefore: new Set(),
 
   init: async (bookId) => {
     const session = ++initSession;
@@ -225,7 +242,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     ]);
     if (session !== initSession) return;
     const progress = new Map(rows.map(row => [row.word, row]));
-    set({ data, index, progress, stats: stats ?? null, ready: true, ...withSets(get, stats ?? null, progress, get().learningSize, get().upcoming) });
+    set({ data, index, progress, metBefore: wordsMetBefore(progress), stats: stats ?? null, ready: true, ...withSets(get, stats ?? null, progress, get().learningSize, get().upcoming) });
     const stale = !stats || stats.words.length < 200 || Date.now() - stats.builtAt > STATS_MAX_AGE_MS;
     if (stale) await get().rebuildStats();
   },
@@ -280,6 +297,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
       progress ??= new Map(get().progress);
       const previous = progress.get(word);
       const before = previous?.exposures ?? 0;
+      if (before === 0 && !get().metBefore.has(word)) firstMetThisSession.add(word);
       const exposures = before + 1;
       // Seen with the meaning hidden (peeking resets this): one more recall in a row.
       const streak = before >= HINT_EXPOSURES ? (previous?.streak ?? 0) + 1 : 0;
@@ -313,7 +331,7 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   reloadProgress: async () => {
     const rows = await db.wordProgress.toArray();
     const progress = new Map(rows.map(row => [row.word, row]));
-    set({ progress, ...withSets(get, get().stats, progress, get().learningSize, get().upcoming) });
+    set({ progress, metBefore: wordsMetBefore(progress), ...withSets(get, get().stats, progress, get().learningSize, get().upcoming) });
   },
 
   reloadSettings: () => {
@@ -333,7 +351,11 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
     set({ upcoming: counts, ...withSets(get, get().stats, get().progress, get().learningSize, counts) });
   },
 
-  setSessionStart: (position) => set({ sessionStart: position, visibleFrom: new Map() }),
+  setSessionStart: (position) => {
+    // Everything met so far now counts as met before the new session.
+    firstMetThisSession = new Set();
+    set({ sessionStart: position, visibleFrom: new Map(), metBefore: wordsMetBefore(get().progress) });
+  },
 
   openCard: (card) => set({ card }),
   closeCard: () => set({ card: null }),
