@@ -1,8 +1,10 @@
 import React from 'react';
-import { X, Sparkles, BookOpen } from 'lucide-react';
+import { X, Sparkles, BookOpen, Check, RotateCcw } from 'lucide-react';
 import { useDictionaryStore } from '../../stores/dictionaryStore';
 import { useVocabularyStore } from '../../stores/vocabularyStore';
 import { useReaderStore } from '../../stores/readerStore';
+import { useImmersionStore } from '../../stores/immersionStore';
+import { useToast } from '../../components/Toast/ToastContext';
 import { Skeleton } from '../../components';
 import styles from './DictionaryPanel.module.css';
 
@@ -11,6 +13,14 @@ export function DictionaryPanel() {
   const { bookId, bookTitle, currentSentenceId } = useReaderStore();
   const { knownWords, addWord, removeWord } = useVocabularyStore();
   const isKnown = panelWord ? knownWords.has(panelWord) : false;
+  // Việt + chữ Hán: mark a word as known from the Chinese sentence, so it is
+  // shown in Chinese from now on (wherever it pairs with the translation).
+  const readingMode = useReaderStore(s => s.readingMode);
+  const immersionReady = useImmersionStore(s => s.ready);
+  const learnedStatus = useImmersionStore(s => (panelWord ? s.progress.get(panelWord)?.status : undefined));
+  const setLearnedStatus = useImmersionStore(s => s.setStatus);
+  const { showToast } = useToast();
+  const canMarkKnown = Boolean(panelWord) && readingMode === 'vietnamese_first' && immersionReady;
 
   if (!isPanelOpen && !panelWord) return null;
 
@@ -48,6 +58,32 @@ export function DictionaryPanel() {
             <div className={styles.errorState}>
               <p>Không tìm thấy nghĩa của từ "{panelWord}".</p>
             </div>
+          )}
+
+          {canMarkKnown && panelState !== 'loading' && (
+            learnedStatus === 'known' ? (
+              <button
+                className={`${styles.vocabBtn} ${styles.vocabBtnActive}`}
+                onClick={() => {
+                  setLearnedStatus(panelWord!, 'learning');
+                  showToast(`${panelWord}: học lại từ đầu`, 'info');
+                }}
+                title="Bấm để học lại từ này"
+              >
+                <RotateCcw size={16} /> Đã thuộc · bấm để học lại
+              </button>
+            ) : (
+              <button
+                className={styles.vocabBtn}
+                onClick={() => {
+                  setLearnedStatus(panelWord!, 'known');
+                  showToast(`${panelWord} sẽ hiện bằng chữ Hán ở những chỗ ghép được với bản dịch`, 'success');
+                  closePanel();
+                }}
+              >
+                <Check size={16} /> Đã thuộc – hiện chữ Hán
+              </button>
+            )
           )}
 
           {(panelState === 'complete' || panelState === 'complete_ai') && panelResult && (
