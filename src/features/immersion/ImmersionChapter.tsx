@@ -184,6 +184,7 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
   const [openOriginals, setOpenOriginals] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => readingUnits(sentences), [sentences]);
+  // Every match, for highlighting the original sentence.
   const allMatches = useMemo(() => {
     const result = new Map<string, WordMatch[]>();
     if (!index) return result;
@@ -193,20 +194,22 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
     return result;
   }, [units, index]);
 
-  // Known words and words met in earlier sessions are woven in everywhere.
-  // Words new in this session only in text
-  // not read before this session, and only from where each word was
-  // introduced: new words never show up in text already read.
+  // What is woven in. Words being learned or known are matched first, so a
+  // longer span around them (蛊师修行) does not hide them. Known words and words
+  // met in earlier sessions are woven in everywhere; words new in this
+  // session only in text not read before, from where each was introduced.
   const shownMatches = useMemo(() => {
     const result = new Map<string, WordMatch[]>();
-    const positionOf = new Map(units.map(unit => [unit.sentence.id, unit.sentence.index]));
-    for (const [sentenceId, matches] of allMatches) {
-      const sentence = positionOf.get(sentenceId) ?? 0;
-      result.set(sentenceId, matches.filter(match =>
+    if (!index) return result;
+    const wanted = (word: string) => known.has(word) || learning.has(word);
+    for (const unit of units) {
+      if (!unit.vietnamese) continue;
+      const sentence = unit.sentence.index;
+      result.set(unit.sentence.id, matchWords(unit.chinese, unit.vietnamese, index, wanted).filter(match =>
         canWeave(match.zh, chapterIndex, sentence, { known, learning, visibleFrom, sessionStart, metBefore })));
     }
     return result;
-  }, [allMatches, units, learning, known, visibleFrom, sessionStart, metBefore, chapterIndex]);
+  }, [units, index, learning, known, visibleFrom, sessionStart, metBefore, chapterIndex]);
 
   const paragraphs = useMemo(() => groupParagraphs(units), [units]);
 

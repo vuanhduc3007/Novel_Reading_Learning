@@ -147,10 +147,41 @@ function chineseSpans(chinese: string): ZhSpan[] {
 }
 
 /**
+ * Every run of one to four adjacent Han characters, longest first. Used for
+ * the preferred words only: the segmenter's boundaries differ between
+ * browsers (Android Chrome may split 需要元石 as 需/要元/石), and a word the
+ * reader is learning must be found on every device. Not used for all words:
+ * spans across word boundaries (要元石 ↔ "cần nguyên thạch") would match.
+ */
+function characterSpans(chinese: string): ZhSpan[] {
+  const spans = new Map<string, ZhSpan>();
+  for (const run of chinese.match(/\p{Script=Han}+/gu) ?? []) {
+    const chars = Array.from(run);
+    for (let start = 0; start < chars.length; start++) {
+      for (let length = 1; length <= MAX_SPAN_CHARS && start + length <= chars.length; length++) {
+        const part = chars.slice(start, start + length);
+        const text = part.join('');
+        if (!spans.has(text)) spans.set(text, { text, chars: part });
+      }
+    }
+  }
+  return [...spans.values()].sort((a, b) => b.chars.length - a.chars.length);
+}
+
+/**
  * Match Chinese words of `chinese` to spans of its translation `vietnamese`.
  * Results are non-overlapping on the Vietnamese side and sorted by position.
+ *
+ * `prefer` (e.g. the words being learned) is matched first, so a word the
+ * reader is learning is not swallowed by a longer span around it: with 蛊师
+ * preferred, "Cổ sư tu hành" gives 蛊师 + 修行 rather than 蛊师修行.
  */
-export function matchWords(chinese: string, vietnamese: string, index: HanVietIndex): WordMatch[] {
+export function matchWords(
+  chinese: string,
+  vietnamese: string,
+  index: HanVietIndex,
+  prefer?: (word: string) => boolean,
+): WordMatch[] {
   if (!chinese || !vietnamese) return [];
   const syllables = viSyllables(vietnamese);
   if (syllables.length === 0) return [];
@@ -174,7 +205,7 @@ export function matchWords(chinese: string, vietnamese: string, index: HanVietIn
     return -1;
   };
 
-  const spans = chineseSpans(chinese);
+  const allSpans = chineseSpans(chinese);
   // A word may occur several times in the source sentence (你…你); it can then
   // claim as many Vietnamese spans.
   const remaining = new Map<string, number>();
@@ -197,29 +228,41 @@ export function matchWords(chinese: string, vietnamese: string, index: HanVietIn
     }
   };
 
-  // 1. Hán-Việt cognates, longest Chinese span first.
-  for (const span of spans) {
-    if (span.chars.length === 1 && !index.isSingleAllowed(span.text)) continue;
-    const keys = span.chars.map(char => index.readingsOf(char));
-    if (keys.some(set => !set)) continue;
-    while (occurrences(span.text) > 0) {
-      const from = findSequence(keys as Array<Set<string>>);
-      if (from < 0) break;
-      claim(span.text, from, span.chars.length, 'hanviet');
-      consume(span.text);
-    }
-  }
-
-  // 2. Native-word lexicon for whole segmenter words.
-  for (const span of spans) {
-    const phrases = index.lexiconPhrases(span.text);
-    if (!phrases) continue;
-    for (const phrase of phrases) {
+  // Preferred words first: multi-character ones searched by characters,
+  // single characters only where the segmenter has them as a word (是 inside
+  // 但是 must not claim a "là" elsewhere in the sentence).
+  const preferred = prefer
+    ? [
+        ...characterSpans(chinese).filter(span => span.chars.length > 1 && prefer(span.text)),
+        ...allSpans.filter(span => span.chars.length === 1 && prefer(span.text)),
+      ]
+    : [];
+  const passes = prefer ? [preferred, allSpans] : [allSpans];
+  for (const spans of passes) {
+    // 1. Hán-Việt cognates, longest Chinese span first.
+    for (const span of spans) {
+      if (span.chars.length === 1 && !index.isSingleAllowed(span.text)) continue;
+      const keys = span.chars.map(char => index.readingsOf(char));
+      if (keys.some(set => !set)) continue;
       while (occurrences(span.text) > 0) {
-        const from = findSequence(phrase.map(key => new Set([key])));
+        const from = findSequence(keys as Array<Set<string>>);
         if (from < 0) break;
-        claim(span.text, from, phrase.length, 'lexicon');
+        claim(span.text, from, span.chars.length, 'hanviet');
         consume(span.text);
+      }
+    }
+
+    // 2. Native-word lexicon (你 ↔ ngươi).
+    for (const span of spans) {
+      const phrases = index.lexiconPhrases(span.text);
+      if (!phrases) continue;
+      for (const phrase of phrases) {
+        while (occurrences(span.text) > 0) {
+          const from = findSequence(phrase.map(key => new Set([key])));
+          if (from < 0) break;
+          claim(span.text, from, phrase.length, 'lexicon');
+          consume(span.text);
+        }
       }
     }
   }

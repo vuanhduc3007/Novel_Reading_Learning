@@ -74,3 +74,19 @@ test('a word repeated in the source is woven at each occurrence, parts of a matc
   assert.ok(result.includes('方源=Phương Nguyên'));
   assert.equal(result.filter(item => item.startsWith('方=')).length, 0, result.join(' '));
 });
+
+test('a word being learned is found whatever the browser segmenter does', () => {
+  const zh = '蛊师修行需要元石，战斗需要元石，炼蛊需要元石，交易需要元石。';
+  const vi = 'Cổ sư tu hành cần nguyên thạch, chiến đấu cần nguyên thạch, luyện cổ cần nguyên thạch, giao dịch cần nguyên thạch.';
+  const preferred = matcher.matchWords(zh, vi, index, word => word === '元石').map(match => `${match.zh}=${match.vi}`);
+  assert.equal(preferred.filter(pair => pair === '元石=nguyên thạch').length, 4, preferred.join(', '));
+});
+
+test('words being learned are matched before a longer span around them', () => {
+  const zh = '蛊师修行需要元石。';
+  const vi = 'Cổ sư tu hành cần nguyên thạch.';
+  assert.ok(woven(zh, vi).includes('蛊师修行=Cổ sư tu hành'));
+  const preferred = matcher.matchWords(zh, vi, index, word => word === '蛊师').map(match => `${match.zh}=${match.vi}`);
+  assert.ok(preferred.includes('蛊师=Cổ sư'), preferred.join(', '));
+  assert.ok(preferred.includes('元石=nguyên thạch'));
+});
