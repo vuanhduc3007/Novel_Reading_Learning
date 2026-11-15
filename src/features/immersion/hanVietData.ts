@@ -12,6 +12,10 @@ export function loadHanViet(): Promise<LoadedHanViet> {
   loading ??= import('../../data/hanviet.json').then(module => {
     const data = (module.default ?? module) as unknown as HanVietData;
     return { data, index: new HanVietIndex(data) };
+  }).catch(error => {
+    // Not remembered: the next reader opening tries again.
+    loading = null;
+    throw error;
   });
   return loading;
 }
