@@ -49,12 +49,18 @@ Người mới học chưa đọc được câu tiếng Trung, nên "Tự đọc
 - **Từ nào được cấy:** app tìm trong từng cặp câu (gốc ↔ bản dịch) xem từ Trung nào tương ứng với cụm Việt nào:
   - **Từ Hán-Việt** (chính xác nhất): mỗi chữ Hán phải khớp đúng âm Hán-Việt của âm tiết Việt ở cùng vị trí. Ví dụ 方源 ↔ "Phương Nguyên", 春秋蝉 ↔ "Xuân Thu Thiền", 天罗地网 ↔ "thiên la địa võng", 蛊师 ↔ "cổ sư". Người Việt học nhóm từ này dễ nhất: nghe đã quen, chỉ cần nhận mặt chữ.
   - **Từ thuần Việt hay gặp:** 你 ↔ "ngươi", 他 ↔ "hắn", 杀 ↔ "giết"… lấy từ một danh sách nhỏ. Mỗi mục đã được kiểm chứng trên cả bộ truyện.
-- **Thứ tự học:** theo độ phổ biến trong chính cuốn sách. Từ gặp nhiều nhất học trước (方源, 他, 这, 是, 我, 蛊师…), nên mỗi từ được gặp lại hàng trăm lần một cách tự nhiên.
-- **Mỗi lần chỉ học vài từ** (5/10/20/40, mặc định 10). Khi thuộc một từ, từ tiếp theo xuất hiện. Văn bản cứ thế "Trung hoá" dần theo tốc độ của người đọc.
+- **Chọn từ mới theo đoạn sắp đọc:** khi có chỗ trống, app đếm tần suất từ trong khoảng 10 chương tới (tính từ chương đang đọc) và chọn từ xuất hiện dày nhất ở đó. Nếu không đủ từ thì lấy thêm theo tần suất cả cuốn. Nhờ vậy từ vừa học được gặp lại liên tục ngay sau đó.
+- **Mỗi lần chỉ học vài từ** (5/10/20/40, mặc định 10). Từ đang học dở luôn được giữ lại; khi thuộc một từ, từ tiếp theo xuất hiện.
+- **Từ mới không hiện trong phần đã đọc:**
+  - Phần đã đọc ở các lần trước (tính tới mốc lúc mở sách) chỉ hiện chữ Hán cho từ đã thuộc.
+  - Từ mới được thêm giữa chừng chỉ xuất hiện từ chỗ đang đọc trở đi.
+- **Chỉ đọc mới mới tính là gặp:**
+  - Mỗi cuốn sách nhớ mốc đã đọc tới đâu. Đọc lại, màn hình lúc mở lại, hay phần đã đọc ở máy khác đều không tính.
+  - Mỗi từ tính tối đa 3 lần mỗi chương, để lần gặp trải ra nhiều chương.
 - **Từ có ba mức hiển thị:**
   1. Từ mới: chữ Hán, nghĩa tiếng Việt nhỏ ở trên.
-  2. Sau 8 lần gặp: chỉ còn chữ Hán, người đọc phải tự nhớ nghĩa (luyện nhớ lại). Nếu phải bấm xem nghĩa thì từ lùi lại vài bước, nghĩa sẽ hiện thêm một thời gian.
-  3. Đã thuộc (người đọc bấm "Đã nhớ", hoặc tự động sau 40 lần gặp): luôn hiện chữ Hán.
+  2. Sau 8 lần gặp: chỉ còn chữ Hán, người đọc phải tự nhớ nghĩa. Nếu bấm xem nghĩa thì nghĩa hiện lại trong 3 lần gặp tiếp, và chuỗi nhớ liên tiếp bị đặt lại về 0.
+  3. **Đã thuộc:** khi gặp 15 lần liên tiếp mà không cần xem nghĩa (hoặc người đọc bấm "Đã nhớ"). Từ đã thuộc luôn hiện chữ Hán ở mọi chỗ. Cách tính này đo khả năng nhớ thật, không chỉ số lần nhìn thấy: từ dễ thuộc sau khoảng 23 lần gặp, từ khó ở lại lâu hơn.
 - **Bấm vào chữ Hán** mở thẻ từ: pinyin, nghe phát âm (giọng đọc của trình duyệt), âm Hán-Việt từng chữ, nghĩa trong câu, các nút Đã nhớ / Từ điển / Bỏ qua.
 - **Bấm vào một câu** để xem câu gốc tiếng Trung ngay bên dưới, với các từ đang học được tô màu. Mỗi từ trong câu gốc vẫn tra được bằng từ điển.
 - **Dữ liệu Hán-Việt** (`src/data/hanviet.json`, khoảng 140 KB, chỉ tải khi cần) được dựng bằng `scripts/build-hanviet.mjs`:

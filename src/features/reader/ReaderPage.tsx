@@ -13,7 +13,7 @@ import { DictionaryPanel } from '../dictionary/DictionaryPanel';
 import { WordCard } from '../immersion/WordCard';
 import { useImmersionStore } from '../../stores/immersionStore';
 import { useSyncStore } from '../../stores/syncStore';
-import { startExposureTracking, stopExposureTracking } from '../immersion/exposureTracker';
+import { currentReadPosition, startExposureTracking, stopExposureTracking } from '../immersion/exposureTracker';
 import { Skeleton, ErrorBanner } from '../../components';
 import { useTranslationScheduler } from '../translation/useTranslationScheduler';
 import { translationQueue } from '../translation/translationQueue';
@@ -49,9 +49,25 @@ export const ReaderPage: React.FC = () => {
   // Encounters count only for text read for the first time.
   useEffect(() => {
     if (!bookId || isLoading) return;
-    void startExposureTracking(bookId);
-    return () => stopExposureTracking();
+    let cancelled = false;
+    void startExposureTracking(bookId).then(() => {
+      // Text up to here was read in earlier sessions: no new words there.
+      if (!cancelled) useImmersionStore.getState().setSessionStart(currentReadPosition(bookId));
+    });
+    return () => {
+      cancelled = true;
+      stopExposureTracking();
+      useImmersionStore.getState().setSessionStart(null);
+    };
   }, [bookId, isLoading]);
+
+  // New words are chosen from the chapters about to be read.
+  const currentChapterIndex = useReaderStore(s => s.currentChapterIndex);
+  const immersionReady = useImmersionStore(s => s.ready);
+  useEffect(() => {
+    if (!bookId || isLoading || !immersionReady || readingMode !== 'vietnamese_first') return;
+    void useImmersionStore.getState().setReadingChapter(currentChapterIndex);
+  }, [bookId, isLoading, immersionReady, readingMode, currentChapterIndex]);
 
   useEffect(() => {
     setTopBarVisible(isVisible);

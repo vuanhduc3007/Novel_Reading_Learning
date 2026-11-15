@@ -4,7 +4,7 @@ import type { Sentence } from '../../types';
 import { tokenize } from '../../utils/tokenizer';
 import { WordToken } from '../dictionary/WordToken';
 import { translationQueue } from '../translation/translationQueue';
-import { useImmersionStore, HINT_EXPOSURES } from '../../stores/immersionStore';
+import { useImmersionStore, HINT_EXPOSURES, canWeave } from '../../stores/immersionStore';
 import { groupParagraphs, readingUnits, type ReadingUnit } from './readingUnits';
 import { matchWords, type WordMatch } from './wordMatcher';
 import { countEncounters } from './exposureTracker';
@@ -178,6 +178,8 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
   const index = useImmersionStore(s => s.index);
   const learning = useImmersionStore(s => s.learning);
   const known = useImmersionStore(s => s.known);
+  const sessionStart = useImmersionStore(s => s.sessionStart);
+  const visibleFrom = useImmersionStore(s => s.visibleFrom);
   const [openOriginals, setOpenOriginals] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => readingUnits(sentences), [sentences]);
@@ -190,14 +192,19 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
     return result;
   }, [units, index]);
 
-  // Only words being learned or already known are woven in.
+  // Known words are woven in everywhere. Words being learned only in text
+  // not read before this session, and only from where each word was
+  // introduced: new words never show up in text already read.
   const shownMatches = useMemo(() => {
     const result = new Map<string, WordMatch[]>();
+    const positionOf = new Map(units.map(unit => [unit.sentence.id, unit.sentence.index]));
     for (const [sentenceId, matches] of allMatches) {
-      result.set(sentenceId, matches.filter(match => learning.has(match.zh) || known.has(match.zh)));
+      const sentence = positionOf.get(sentenceId) ?? 0;
+      result.set(sentenceId, matches.filter(match =>
+        canWeave(match.zh, chapterIndex, sentence, { known, learning, visibleFrom, sessionStart })));
     }
     return result;
-  }, [allMatches, learning, known]);
+  }, [allMatches, units, learning, known, visibleFrom, sessionStart, chapterIndex]);
 
   const paragraphs = useMemo(() => groupParagraphs(units), [units]);
 

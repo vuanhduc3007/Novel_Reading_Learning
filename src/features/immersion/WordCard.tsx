@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookOpen, Check, Volume2, X, RotateCcw, EyeOff } from 'lucide-react';
-import { useImmersionStore, AUTO_KNOWN_EXPOSURES } from '../../stores/immersionStore';
+import { useImmersionStore, HINT_EXPOSURES, RECALL_STREAK } from '../../stores/immersionStore';
 import { useDictionaryStore } from '../../stores/dictionaryStore';
 import styles from './Immersion.module.css';
 
@@ -127,7 +127,9 @@ export function WordCard() {
           ? 'Đã thuộc — từ này luôn hiện bằng chữ Hán.'
           : entry?.status === 'ignored'
             ? 'Đã bỏ qua từ này.'
-            : `Đang học · đã gặp ${exposures} lần (tự thuộc sau ${AUTO_KNOWN_EXPOSURES} lần)`}
+            : exposures < HINT_EXPOSURES
+              ? `Đang học · đã gặp ${exposures} lần · nghĩa sẽ ẩn sau ${HINT_EXPOSURES - exposures} lần nữa`
+              : `Đang tự nhớ · ${entry?.streak ?? 0}/${RECALL_STREAK} lần liên tiếp không cần xem nghĩa thì tính là thuộc`}
       </div>
       <div className={styles.cardActions}>
         {isKnown ? (

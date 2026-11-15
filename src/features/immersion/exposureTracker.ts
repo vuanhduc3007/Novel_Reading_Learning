@@ -92,6 +92,21 @@ export function countEncounters(forBookId: string, chapter: number, sentence: nu
   return counted;
 }
 
+export interface ReadingPosition {
+  chapter: number;
+  sentence: number;
+}
+
+/** Furthest position read in the tracked book (null before tracking starts). */
+export function currentReadPosition(forBookId: string): ReadingPosition | null {
+  if (forBookId !== bookId || !mark) return null;
+  return { chapter: mark.chapter, sentence: mark.sentence };
+}
+
+export function isAfterPosition(chapter: number, sentence: number, position: ReadingPosition): boolean {
+  return chapter > position.chapter || (chapter === position.chapter && sentence > position.sentence);
+}
+
 /** Test helper. */
 export function exposureMarkForTests(): ExposureMark | null {
   return mark;

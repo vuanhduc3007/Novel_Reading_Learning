@@ -143,6 +143,11 @@ export interface WordProgress {
   status: WordLearningStatus;
   /** Times the word was seen in Chinese while reading. Peeking lowers it. */
   exposures: number;
+  /**
+   * Consecutive encounters with the meaning hidden and not peeked at. The
+   * word counts as known when it reaches RECALL_STREAK. Local to the device.
+   */
+  streak?: number;
   updatedAt: number;
 }
 
