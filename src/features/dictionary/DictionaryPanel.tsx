@@ -1,15 +1,16 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Sparkles, BookOpen, Check, RotateCcw } from 'lucide-react';
 import { useDictionaryStore } from '../../stores/dictionaryStore';
 import { useVocabularyStore } from '../../stores/vocabularyStore';
 import { useReaderStore } from '../../stores/readerStore';
 import { useImmersionStore } from '../../stores/immersionStore';
 import { useToast } from '../../components/Toast/ToastContext';
+import { viSyllables } from '../immersion/wordMatcher';
 import { Skeleton } from '../../components';
 import styles from './DictionaryPanel.module.css';
 
 export function DictionaryPanel() {
-  const { isPanelOpen, closePanel, panelState, panelWord, panelResult, handleWordClick } = useDictionaryStore();
+  const { isPanelOpen, closePanel, panelState, panelWord, panelResult, panelContext, handleWordClick } = useDictionaryStore();
   const { bookId, bookTitle, currentSentenceId } = useReaderStore();
   const { knownWords, addWord, removeWord } = useVocabularyStore();
   const isKnown = panelWord ? knownWords.has(panelWord) : false;
@@ -19,8 +20,37 @@ export function DictionaryPanel() {
   const immersionReady = useImmersionStore(s => s.ready);
   const learnedStatus = useImmersionStore(s => (panelWord ? s.progress.get(panelWord)?.status : undefined));
   const setLearnedStatus = useImmersionStore(s => s.setStatus);
+  const addPairing = useImmersionStore(s => s.addPairing);
+  const pairsInSentence = useImmersionStore(s => s.pairsInSentence);
+  useImmersionStore(s => s.userLexicon); // re-render when pairings change
   const { showToast } = useToast();
   const canMarkKnown = Boolean(panelWord) && readingMode === 'vietnamese_first' && immersionReady;
+
+  // When the app cannot tell which Vietnamese words translate the word in this
+  // sentence (担心 ↔ "lo lắng" is not Hán-Việt), the reader picks them.
+  const context = panelContext?.vietnamese ? panelContext : null;
+  const unpaired = Boolean(canMarkKnown && panelWord && context && !pairsInSentence(panelWord, context.chinese, context.vietnamese));
+  const syllables = useMemo(() => (context ? viSyllables(context.vietnamese) : []), [context]);
+  const [picking, setPicking] = useState(false);
+  const [range, setRange] = useState<[number, number] | null>(null);
+  useEffect(() => {
+    setPicking(false);
+    setRange(null);
+  }, [panelWord, panelContext]);
+  const pick = (position: number) => {
+    setRange(current => {
+      if (!current || current[0] !== current[1]) return [position, position];
+      return [Math.min(current[0], position), Math.max(current[0], position)];
+    });
+  };
+  const savePairing = () => {
+    if (!panelWord || !context || !range) return;
+    const text = context.vietnamese.slice(syllables[range[0]]!.start, syllables[range[1]]!.end);
+    addPairing(panelWord, text);
+    if (learnedStatus !== 'known') setLearnedStatus(panelWord, 'known');
+    showToast(`${panelWord} = "${text}": từ giờ hiện bằng chữ Hán`, 'success');
+    closePanel();
+  };
 
   if (!isPanelOpen && !panelWord) return null;
 
@@ -77,6 +107,10 @@ export function DictionaryPanel() {
                 className={styles.vocabBtn}
                 onClick={() => {
                   setLearnedStatus(panelWord!, 'known');
+                  if (unpaired) {
+                    setPicking(true);
+                    return;
+                  }
                   showToast(`${panelWord} sẽ hiện bằng chữ Hán ở những chỗ ghép được với bản dịch`, 'success');
                   closePanel();
                 }}
@@ -84,6 +118,36 @@ export function DictionaryPanel() {
                 <Check size={16} /> Đã thuộc – hiện chữ Hán
               </button>
             )
+          )}
+
+          {canMarkKnown && context && unpaired && (picking || learnedStatus === 'known') && (
+            <div className={styles.pairing}>
+              <p className={styles.pairingHint}>
+                App chưa biết chữ Việt nào trong câu này là <strong>{panelWord}</strong>. Bấm chữ đầu và chữ cuối của phần tương ứng:
+              </p>
+              <p className={styles.pairingSentence}>
+                {syllables.map((syllable, position) => {
+                  const selected = range !== null && position >= range[0] && position <= range[1];
+                  return (
+                    <React.Fragment key={position}>
+                      {context.vietnamese.slice(position === 0 ? 0 : syllables[position - 1]!.end, syllable.start)}
+                      <button
+                        className={`${styles.syllable} ${selected ? styles.syllableSelected : ''}`}
+                        onClick={() => pick(position)}
+                      >
+                        {context.vietnamese.slice(syllable.start, syllable.end)}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+                {context.vietnamese.slice(syllables[syllables.length - 1]?.end ?? 0)}
+              </p>
+              <div className={styles.pairingActions}>
+                <button className={`${styles.vocabBtn} ${styles.vocabBtnActive}`} disabled={!range} onClick={savePairing}>
+                  <Check size={16} /> Lưu: {panelWord} = {range ? `"${context.vietnamese.slice(syllables[range[0]]!.start, syllables[range[1]]!.end)}"` : '…'}
+                </button>
+              </div>
+            </div>
           )}
 
           {(panelState === 'complete' || panelState === 'complete_ai') && panelResult && (

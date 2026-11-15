@@ -179,6 +179,21 @@ export interface MatchOptions {
    * (古月, 方源, 族长, 修行): see isCompound.
    */
   isFreeWord?: (word: string) => boolean;
+  /**
+   * Pairings the reader made (担心 ↔ "lo lắng"), from userPairingIndex: used
+   * like lexicon entries.
+   */
+  userLexicon?: (word: string) => string[][] | undefined;
+}
+
+/** Turn {word: "lo lắng|lo âu"} into a lookup of syllable keys for MatchOptions.userLexicon. */
+export function userPairingIndex(pairings: Record<string, string>): (word: string) => string[][] | undefined {
+  const map = new Map<string, string[][]>();
+  for (const [word, value] of Object.entries(pairings)) {
+    const phrases = value.split('|').map(phrase => viSyllables(phrase).map(syllable => syllable.key)).filter(keys => keys.length > 0);
+    if (phrases.length) map.set(word, phrases);
+  }
+  return word => map.get(word);
 }
 
 /**
@@ -206,6 +221,11 @@ export function matchWords(
   options: MatchOptions = {},
 ): WordMatch[] {
   const { prefer } = options;
+  const lexiconOf = (word: string): string[][] | undefined => {
+    const own = options.userLexicon?.(word);
+    const base = index.lexiconPhrases(word);
+    return own && base ? [...own, ...base] : own ?? base;
+  };
   // Words being shown count as free words too (before the book's word
   // statistics exist, and for words just started).
   const free = (word: string) => Boolean(options.isFreeWord?.(word) || prefer?.(word));
@@ -327,7 +347,7 @@ export function matchWords(
   // Curated multi-character lexicon words (人家, 我们) come first, found by
   // characters on every device, so 人 alone cannot take the "người" of
   // 人家 ↔ "người ta" where a browser splits 人家 into 人/家.
-  const lexiconWords = characterSpans(chinese).filter(span => span.chars.length > 1 && index.lexiconPhrases(span.text));
+  const lexiconWords = characterSpans(chinese).filter(span => span.chars.length > 1 && lexiconOf(span.text));
 
   // Preferred words next, all found by characters, so they do not depend on
   // where the browser's segmenter puts boundaries (Chrome on a desktop keeps
@@ -372,7 +392,7 @@ export function matchWords(
 
     // 2. Native-word lexicon (你 ↔ ngươi).
     for (const span of spans) {
-      const phrases = index.lexiconPhrases(span.text);
+      const phrases = lexiconOf(span.text);
       if (!phrases) continue;
       for (const phrase of phrases) {
         while (occurrences(span.text) > 0) {

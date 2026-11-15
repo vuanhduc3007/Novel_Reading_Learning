@@ -41,6 +41,7 @@ export const SETTINGS_KEYS = [
   'reader-cn-font',
   'app-theme',
   'immersion-learning-size',
+  'immersion-pairings',
 ] as const;
 export const SETTINGS_UPDATED_KEY = 'settings-updated-at';
 

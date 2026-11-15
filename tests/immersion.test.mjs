@@ -158,3 +158,13 @@ test('a single character being learned is found outside words, whatever the segm
   const both = matcher.matchWords('但是你是谁？', 'Nhưng ngươi là ai?', index, { prefer: word => word === '是', isFreeWord: word => word === '但是' });
   assert.equal(both.filter(match => match.zh === '是').length, 1);
 });
+
+test('a pairing made by the reader is used like a lexicon entry', () => {
+  const zh = '他最担心的事情并没有成真。';
+  const vi = 'Chuyện hắn lo lắng nhất cũng không trở thành sự thật.';
+  const prefer = word => word === '担心';
+  assert.ok(!matcher.matchWords(zh, vi, index, { prefer }).some(match => match.zh === '担心'));
+  const userLexicon = matcher.userPairingIndex({ 担心: 'lo lắng' });
+  const match = matcher.matchWords(zh, vi, index, { prefer, userLexicon }).find(m => m.zh === '担心');
+  assert.equal(match?.vi, 'lo lắng');
+});

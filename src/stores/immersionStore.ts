@@ -5,7 +5,7 @@ import { buildBookWordStats, freeWordsOf, STATS_VERSION } from '../features/imme
 import { markManyDirty, markSettingsChanged } from '../features/sync/localChanges';
 import { countUpcomingWords } from '../features/immersion/upcomingWords';
 import { currentReadPosition, type ReadingPosition } from '../features/immersion/exposureTracker';
-import { isCompound, type HanVietData, type HanVietIndex, type WordMatch } from '../features/immersion/wordMatcher';
+import { isCompound, matchWords, userPairingIndex, type HanVietData, type HanVietIndex, type WordMatch } from '../features/immersion/wordMatcher';
 import type { BookWordStats, WordLearningStatus, WordProgress } from '../types';
 
 /**
@@ -37,6 +37,19 @@ const MIN_OCCURRENCES = 3;
 export const LEARNING_SIZES = [5, 10, 20, 40] as const;
 const DEFAULT_LEARNING_SIZE = 10;
 const STATS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+const PAIRINGS_KEY = 'immersion-pairings';
+
+/** Pairings the reader made: Chinese word → Vietnamese words ("lo lắng|lo âu"). */
+function readPairings(): Record<string, string> {
+  try {
+    const value = JSON.parse(localStorage.getItem(PAIRINGS_KEY) ?? '{}') as unknown;
+    if (!value || typeof value !== 'object') return {};
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
 
 function readLearningSize(): number {
   try {
@@ -96,6 +109,14 @@ interface ImmersionState {
   /** Re-read word progress from IndexedDB (after a sync). */
   reloadProgress: () => Promise<void>;
   reloadSettings: () => void;
+  /** Pairings the reader made (担心 ↔ "lo lắng"); synced with the settings. */
+  pairings: Record<string, string>;
+  /** Lookup for MatchOptions.userLexicon. */
+  userLexicon: (word: string) => string[][] | undefined;
+  /** Remember that `word` is rendered as `vietnamese` in the translation. */
+  addPairing: (word: string, vietnamese: string) => void;
+  /** Whether `word` pairs with part of this sentence's translation. */
+  pairsInSentence: (word: string, chinese: string, vietnamese: string) => boolean;
 }
 
 let initSession = 0;
@@ -239,6 +260,8 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   statsBuilding: false,
   progress: new Map(),
   learningSize: readLearningSize(),
+  pairings: readPairings(),
+  userLexicon: userPairingIndex(readPairings()),
   learning: new Set(),
   known: new Set(),
   card: null,
@@ -356,6 +379,25 @@ export const useImmersionStore = create<ImmersionState>((set, get) => ({
   reloadSettings: () => {
     const size = readLearningSize();
     if (size !== get().learningSize) set({ learningSize: size, ...withSets(get, get().stats, get().progress, size, get().upcoming) });
+    const pairings = readPairings();
+    if (JSON.stringify(pairings) !== JSON.stringify(get().pairings)) set({ pairings, userLexicon: userPairingIndex(pairings) });
+  },
+
+  addPairing: (word, vietnamese) => {
+    const rendering = vietnamese.trim().toLowerCase();
+    if (!word || !rendering) return;
+    const current = get().pairings[word]?.split('|') ?? [];
+    if (current.includes(rendering)) return;
+    const pairings = { ...get().pairings, [word]: [...current, rendering].join('|') };
+    try { localStorage.setItem(PAIRINGS_KEY, JSON.stringify(pairings)); } catch { /* still used this session */ }
+    markSettingsChanged();
+    set({ pairings, userLexicon: userPairingIndex(pairings) });
+  },
+
+  pairsInSentence: (word, chinese, vietnamese) => {
+    const { index, userLexicon } = get();
+    if (!index || !chinese.includes(word)) return false;
+    return matchWords(chinese, vietnamese, index, { prefer: w => w === word, userLexicon }).some(match => match.zh === word);
   },
 
   setReadingChapter: async (chapterIndex) => {

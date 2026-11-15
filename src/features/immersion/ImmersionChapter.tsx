@@ -8,6 +8,7 @@ import { useImmersionStore, HINT_EXPOSURES, canWeave } from '../../stores/immers
 import { groupParagraphs, readingUnits, type ReadingUnit } from './readingUnits';
 import { matchWords, type WordMatch } from './wordMatcher';
 import { countEncounters } from './exposureTracker';
+import { setNextLookupContext } from '../../stores/dictionaryStore';
 import styles from './Immersion.module.css';
 
 // An encounter is counted once per sentence per session, and only for text
@@ -173,8 +174,10 @@ function Original({ unit, matches }: { unit: ReadingUnit; matches: WordMatch[] }
     });
     return result;
   }, [unit.chinese, matches]);
+  // A word looked up here can be paired with this translation (dictionary panel).
+  const rememberContext = () => setNextLookupContext({ chinese: unit.chinese, vietnamese: unit.vietnamese ?? '' });
   return (
-    <p className={styles.original}>
+    <p className={styles.original} onClickCapture={rememberContext}>
       {parts.map((part, partIndex) =>
         tokenize(part.text).map((token, index) =>
           token.isWord ? (
@@ -206,6 +209,7 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
   const visibleFrom = useImmersionStore(s => s.visibleFrom);
   const metBefore = useImmersionStore(s => s.metBefore);
   const freeWords = useImmersionStore(s => s.freeWords);
+  const userLexicon = useImmersionStore(s => s.userLexicon);
   const [openOriginals, setOpenOriginals] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => readingUnits(sentences), [sentences]);
@@ -222,11 +226,11 @@ export function ImmersionChapter({ chapterIndex, sentences }: ImmersionChapterPr
       if (!unit.vietnamese) continue;
       const sentence = unit.sentence.index;
       const shown = (word: string) => canWeave(word, chapterIndex, sentence, state);
-      const matches = matchWords(unit.chinese, unit.vietnamese, index, { prefer: shown, isFreeWord: word => freeWords.has(word) });
+      const matches = matchWords(unit.chinese, unit.vietnamese, index, { prefer: shown, isFreeWord: word => freeWords.has(word), userLexicon });
       result.set(unit.sentence.id, matches.filter(match => shown(match.zh)));
     }
     return result;
-  }, [units, index, learning, known, visibleFrom, sessionStart, metBefore, freeWords, chapterIndex]);
+  }, [units, index, learning, known, visibleFrom, sessionStart, metBefore, freeWords, userLexicon, chapterIndex]);
 
   const paragraphs = useMemo(() => groupParagraphs(units), [units]);
 

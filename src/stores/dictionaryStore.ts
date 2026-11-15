@@ -8,6 +8,19 @@ interface HoverPosition {
   height: number;
 }
 
+/** The sentence pair a word was looked up from (Việt + chữ Hán original). */
+export interface LookupContext {
+  chinese: string;
+  vietnamese: string;
+}
+
+// Set just before a word of an original sentence is clicked (capture phase),
+// taken by the next handleWordClick.
+let nextContext: LookupContext | null = null;
+export function setNextLookupContext(context: LookupContext | null): void {
+  nextContext = context;
+}
+
 interface DictionaryStoreState {
   // Quick Tooltip State
   hoveredWord: string | null;
@@ -19,6 +32,7 @@ interface DictionaryStoreState {
   panelState: DictionaryPanelState;
   panelWord: string | null;
   panelResult: DictionaryLookupResult | null;
+  panelContext: LookupContext | null;
 
   // Actions
   handleWordHover: (word: string, position: HoverPosition) => void;
@@ -41,6 +55,7 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
   panelState: 'closed',
   panelWord: null,
   panelResult: null,
+  panelContext: null,
 
   handleWordHover: (word, position) => {
     // Debounce hover to prevent spamming
@@ -76,8 +91,11 @@ export const useDictionaryStore = create<DictionaryStoreState>((set, get) => ({
     hoverTimeout = null;
     hoverRequestId++;
     const requestId = ++panelRequestId;
+    const panelContext = nextContext;
+    nextContext = null;
     // Close tooltip, open panel
     set({
+      panelContext,
       hoveredWord: null,
       hoverPosition: null,
       tooltipResult: null,
